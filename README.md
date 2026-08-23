@@ -699,7 +699,7 @@ downloads move.
 ### docker compose, if you want aria2 too
 
 ```sh
-cd apps/mariastew
+cd mariastew
 docker compose up --build
 ```
 
@@ -708,7 +708,7 @@ is the whole command — no separate seeding step. `docker-compose.yml`'s
 there is nothing to remember and no way to end up looking at an empty
 library that only looks like a working one. Then visit
 `http://localhost:8080/auth/dev-login`. `ROOTS` is preset to
-`tv:/tv,movies:/movies`, both bind-mounted from `apps/mariastew/dev-data/`
+`tv:/tv,movies:/movies`, both bind-mounted from `dev-data/`
 into both containers at the same path — real downloads land there
 alongside the fixtures. `docker compose down` stops and removes both
 containers and the network; `dev-data/` is yours and is left alone.
@@ -737,7 +737,7 @@ whatever aria2 has since downloaded into the same directories.
 
 Outside docker — the plain `cargo run` flow above, or resetting the
 fixtures without a full compose cycle — use the `mise` tasks directly:
-`mise run mariastew:seed`, or `mise run mariastew:seed:reset` (equivalently
+`mise run seed`, or `mise run seed:reset` (equivalently
 `./scripts/seed-dev-fixtures.ts --reset`) to wipe `dev-data/tv` and
 `dev-data/movies` and reseed from scratch — the way back to a clean
 fixture-only state once a test download has piled up in there.
@@ -745,7 +745,7 @@ fixture-only state once a test download has piled up in there.
 #### Every download state at once
 
 ```sh
-mise run mariastew:dev:mock
+mise run dev:mock
 ```
 
 The fixture library populates the picker; this populates the *list*. A real
@@ -774,7 +774,7 @@ selection filter — has its own tests in `src/filter.rs` and
 The task is `ARIA2_RPC_URL` plus `--scale aria2=0`, because compose has no way
 to say "this profile replaces that service". Port 6801, so the two can never
 race for a bind and the env var is the only thing deciding which one is
-talked to. For the plain `cargo run` loop, `mise run mariastew:mock` runs it
+talked to. For the plain `cargo run` loop, `mise run mock` runs it
 alone and `ARIA2_RPC_URL=http://127.0.0.1:6801/jsonrpc cargo run` points at
 it.
 
@@ -826,7 +826,7 @@ two class names.
 Adding one: call `icons::<name>(class="")` from a template, run
 
 ```sh
-mise run mariastew:icons
+mise run icons
 ```
 
 and it adds a macro for any name a template calls that `icons.html` doesn't
@@ -850,7 +850,7 @@ a character is used instead.
 `icons/icon.svg` is the drawing and everything else is rendered from it by
 
 ```sh
-mise run mariastew:app-icons
+mise run app-icons
 ```
 
 which needs `brew install librsvg`. The outputs are committed, so neither the
@@ -863,7 +863,7 @@ things off strangers with magnet links. It is drawn as flat fills rather than
 in the Lucide line style above, because 16px is the size that decides an icon —
 it is the browser tab, and a 2-unit stroke on a 24 grid is a third of a pixel
 there. Nine of the ten it was chosen from are in the history of
-[#373](https://github.com/radiosilence/jaritanet/issues/373).
+[jaritanet#373](https://github.com/radiosilence/jaritanet/issues/373).
 
 Two shapes come out of the one drawing, and the difference is who rounds the
 corners. Anything shown as given keeps the tile's own: the favicon, and the
@@ -931,8 +931,8 @@ only editing a template does:
 mise run css
 ```
 
-This runs `tailwindcss` from `apps/mariastew/node_modules/.bin` (the app's
-own devDependencies — `package.json` here declares `@jaritanet/mariastew-styles`,
+This runs `tailwindcss` from `node_modules/.bin` (this repo's own
+devDependencies — `package.json` declares `mariastew-assets`,
 separate from the Rust crate) against `styles/app.css`, minified, into
 `assets/app.css`.
 
@@ -945,7 +945,7 @@ committed output, and only editing the source needs Node:
 mise run js
 ```
 
-This runs `tsc` from `apps/mariastew/node_modules/.bin` against
+This runs `tsc` from `node_modules/.bin` against
 `tsconfig.web.json` — a browser config (DOM lib, real emit), which is what
 `mise run typecheck` picks up. It does not extend the monorepo root:
 mariastew is slated to move to its own repo (#299), and a path two
