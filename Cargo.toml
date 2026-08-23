@@ -1,6 +1,6 @@
 [package]
 name = "mariastew"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 
 [dependencies]
@@ -23,3 +23,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 url = "2.5.8"
 async-stream = "0.3.6"
 futures-util = "0.3.33"
+
+[dev-dependencies]
+# `oneshot`, to drive the router in a test without binding a port.
+tower = { version = "0.5", features = ["util"] }
