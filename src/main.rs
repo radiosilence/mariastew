@@ -21,9 +21,12 @@ mod views;
 
 use std::sync::Arc;
 
+#[cfg(test)]
+use std::{fs, path::Path};
+
 use axum::Router;
 use axum::http::header;
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
 use crate::config::Config;
@@ -36,6 +39,59 @@ use crate::state::AppState;
 /// `views::Page::app_js_path` renders the same constant into the `<script>`
 /// tag that requests it.
 pub const APP_JS_PATH: &str = concat!("/assets/", env!("APP_JS_FILENAME"));
+
+/// Everything this page needs comes from this origin, so the policy says so.
+/// Nothing is fetched from a CDN and no handler is written into the markup —
+/// `app.js` and the vendored Datastar bundle are both served from here, and
+/// every behaviour hangs off a `data-*` attribute rather than an `onclick`.
+///
+/// `unsafe-eval` is the one concession, and it is not optional: Datastar
+/// compiles each `data-*` expression with `Function()`, so without it no
+/// attribute on any page does anything. It buys an attacker nothing on its
+/// own — `script-src 'self'` still refuses to load script from anywhere else —
+/// but it does mean escaping is the only thing standing between a string that
+/// reaches the DOM and code that runs. Askama escapes by default and nothing
+/// here opts out; `no_template_disables_escaping` is what keeps that true.
+///
+/// Shared verbatim with mcp-gateway, which reaches the same policy from the
+/// other direction: it had this without `unsafe-eval` until it wanted Datastar.
+const CSP: &str = "default-src 'self'; \
+     script-src 'self' 'unsafe-eval'; \
+     style-src 'self'; \
+     img-src 'self' data:; \
+     connect-src 'self'; \
+     form-action 'self'; \
+     frame-ancestors 'none'; \
+     base-uri 'none'; \
+     object-src 'none'";
+
+/// Applied to every response. Harmless on the SSE and JSON the app returns, and
+/// cheaper to reason about than deciding per route which ones render HTML.
+async fn security_headers(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        axum::http::HeaderValue::from_static(CSP),
+    );
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        axum::http::HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        header::REFERRER_POLICY,
+        axum::http::HeaderValue::from_static("no-referrer"),
+    );
+    // Redundant beside frame-ancestors for anything current, and free.
+    headers.insert(
+        header::X_FRAME_OPTIONS,
+        axum::http::HeaderValue::from_static("DENY"),
+    );
+    response
+}
 
 /// Served from the binary rather than a volume: the stylesheet and the vendored
 /// bundle are build outputs, so a mount would be a second thing to keep in step
@@ -175,6 +231,7 @@ async fn main() -> anyhow::Result<()> {
             );
     }
     let app = app
+        .layer(axum::middleware::from_fn(security_headers))
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state);
 
@@ -192,4 +249,66 @@ async fn main() -> anyhow::Result<()> {
 async fn shutdown() {
     let _ = tokio::signal::ctrl_c().await;
     tracing::info!("shutting down");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn every_response_carries_the_security_headers() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use tower::ServiceExt;
+
+        let app = Router::new()
+            .route("/", get(|| async { "hi" }))
+            .layer(axum::middleware::from_fn(security_headers));
+
+        let response = app
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        let headers = response.headers();
+        let csp = headers[header::CONTENT_SECURITY_POLICY].to_str().unwrap();
+        assert!(csp.contains("default-src 'self'"));
+        assert!(csp.contains("frame-ancestors 'none'"));
+        // Datastar cannot work without the eval hatch, so that one is stated
+        // and explained above. `unsafe-inline` is the one nothing here needs,
+        // and it is what someone reaches for to make a stray inline handler
+        // work — which is exactly the change this should refuse.
+        assert!(
+            !csp.contains("unsafe-inline"),
+            "csp has an inline escape hatch"
+        );
+        assert_eq!(headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
+        assert_eq!(headers[header::X_FRAME_OPTIONS], "DENY");
+        assert_eq!(headers[header::REFERRER_POLICY], "no-referrer");
+    }
+
+    /// With eval allowed, escaping is the only thing between a string that
+    /// reaches the DOM and code that runs — a `data-*` attribute built from an
+    /// unescaped value is executable by design.
+    ///
+    /// Askama escapes by default, so what needs watching is the opt-outs. The
+    /// one below is a sub-template's already-rendered markup rather than a
+    /// value, which is the only reason it is allowed to be raw. A new one is
+    /// not necessarily wrong, but it has to be looked at — so it lands here.
+    #[test]
+    fn escaping_is_only_opted_out_of_where_expected() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("templates");
+        let mut found = Vec::new();
+        for entry in fs::read_dir(&dir).expect("templates/") {
+            let path = entry.expect("entry").path();
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            for line in fs::read_to_string(&path).expect("readable").lines() {
+                if line.contains("|safe") || line.contains("escape(") {
+                    found.push(format!("{name}: {}", line.trim()));
+                }
+            }
+        }
+        found.sort();
+        assert_eq!(found, ["page.html: {{ self.picker()?|safe }}"]);
+    }
 }
