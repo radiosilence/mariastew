@@ -1,3 +1,7 @@
 # docker-compose's bind-mounted roots: real downloads plus the directory
 # tree scripts/seed-dev-fixtures.ts generates. Neither belongs in git.
 dev-data/
+
+# The deploy chart keeps its own.
+deploy/pulumi/node_modules/
+deploy/pulumi/dist/
