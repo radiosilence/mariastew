@@ -1,2 +1,0 @@
-cargo:rerun-if-changed=assets
-cargo:rustc-env=APP_JS_FILENAME=app-DRQPRTm9.js

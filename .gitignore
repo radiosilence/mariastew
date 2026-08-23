@@ -1,7 +1,17 @@
+# Build output. Derived, large, and different on every machine. `/target/` was
+# missing, and 950MB of debug rlibs and incremental dep-graphs went in behind
+# it — so these are stated by what they are rather than by where they were
+# found: `node_modules/` and `dist/` carry no leading slash and match at any
+# depth, where naming the chart's two by hand only held until something else
+# grew one.
+/target/
+node_modules/
+dist/
+
 # docker-compose's bind-mounted roots: real downloads plus the directory
 # tree scripts/seed-dev-fixtures.ts generates. Neither belongs in git.
 dev-data/
 
-# The deploy chart keeps its own.
-deploy/pulumi/node_modules/
-deploy/pulumi/dist/
+# Deliberately not ignored, though it is built: `assets/app-<hash>.js` is what
+# `include_bytes!` reads at compile time and `build.rs` names, so a checkout
+# without it does not compile. Same standing as `assets/app.css`.
