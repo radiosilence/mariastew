@@ -5,6 +5,18 @@ All notable changes to mariastew are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **One CI/CD pipeline, gated by a single `Checks` status.** Jobs run only for
+  the domains a change touches, so a docs or chart change no longer compiles
+  two release binaries. The image is built once per commit and promoted by
+  retagging: `main` follows main, and a release adds the version tags and
+  `latest`, which no longer moves on every push. The release jobs now run only
+  after every check has passed, and a failed release is retried by running the
+  workflow manually.
+
 ## [0.2.1] - 2026-08-23
 
 ### Added

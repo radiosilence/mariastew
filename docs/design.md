@@ -510,11 +510,13 @@ initial plan for this service assumed:
   right granularity but cannot survive between runs inside `docker build`,
   since the `type=gha` backend does not export cache mounts. So the compile
   job holds it with `Swatinem/rust-cache` and hands the binary over as an
-  artefact, which the reusable container workflow unpacks into the build
-  context (`context-artifact`). Still one native runner per architecture, so
-  nothing is paid in QEMU emulation either way. The cost is that
-  `Dockerfile` no longer builds on its own — it wants the binary beside it —
-  which is why local iteration goes through `Dockerfile.dev` instead.
+  artefact, which the container job unpacks into `dist/<arch>/`, the build
+  context. The binaries compile on one native runner per architecture; only
+  the image's `apk add` layer runs under QEMU for arm64, and the registry
+  layer cache keeps it, since it depends on nothing of mariastew's. The cost
+  is that `Dockerfile` no longer builds on its own — it wants the binaries
+  beside it — which is why local iteration goes through `Dockerfile.dev`
+  instead.
 - **The runtime base is `alpine`, not `scratch`.** It has to carry `aria2c`
   regardless, and needs a CA bundle even for the Rust binary alone: reqwest's
   `rustls` feature pulls in `rustls-platform-verifier`, which reads the

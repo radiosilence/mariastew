@@ -118,12 +118,29 @@ The stylesheet, browser script and icons are generated and committed, so
 `cargo build` needs no node toolchain. Rebuilding them after changing a
 template is [docs/frontend.md](docs/frontend.md).
 
-## Releasing
+## CI and releasing
 
-Bump `version` in `Cargo.toml`, `deploy/pulumi/package.json` and
-`APP_VERSION` — CI refuses a release where the three disagree. It then builds
-the image, publishes the chart, and cuts the tag, in that order, so a release
-means every artefact exists.
+One workflow, `.github/workflows/ci-cd.yml`, checks a change and then ships it
+in the same run, so what ships is what was checked. Its `Checks` job is the
+only status branch protection requires; it passes when every other CI job
+either passed or was skipped.
+
+Jobs skip when a change does not touch their domain. `changes` diffs a pull
+request against its base and a push against the last commit on main whose run
+passed, and sets one output per domain: `rust` (the crate, its templates and
+committed assets, `mise.toml`), `package` (`deploy/pulumi/`) and `docker` (the
+release binaries and the image). Markdown never counts; anything under
+`.github/` counts for every domain; a manual run or a release runs everything.
+To add a domain, add an output and a `touches` allowlist to `changes`, gate the
+new job on it with `if:`, and add the job to the `needs` of `Checks`.
+
+To release, bump `version` in `Cargo.toml`, `deploy/pulumi/package.json` and
+`APP_VERSION`; the `Version` job refuses a change where the three disagree.
+Once `Checks` passes on main, CD tags the image the run already built with the
+version and `latest`, publishes the chart, and creates the GitHub release, in
+that order, so a release means every artefact exists. Every other push that
+rebuilds the image moves its `main` tag. A failed release is retried by running
+the workflow manually on main, which releases whatever version is not yet out.
 
 The crate compiles on the runner rather than inside the `Dockerfile`, and the
 runtime base is `alpine` rather than `scratch`; both have reasons worth reading
