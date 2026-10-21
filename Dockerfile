@@ -1,13 +1,12 @@
-# `mariastew` is compiled by the CI job that calls this build, not here: a
-# `cargo build` inside a Dockerfile is one atomic layer, so any movement in
-# Cargo.lock recompiles every dependency — 168s of them against 15s of our own
-# code. Cargo's cache subdivides by crate, but it only survives between runs
-# somewhere Docker isn't, which is the runner. See
-# .github/workflows/build-mariastew-container.yml.
+# `mariastew` is compiled by the CI job `linux-build`, not here: a `cargo
+# build` inside a Dockerfile is one atomic layer, so any movement in Cargo.lock
+# recompiles every dependency. Cargo's cache subdivides by crate, but it only
+# survives between runs somewhere Docker isn't, which is the runner. See
+# .github/workflows/ci-cd.yml.
 #
-# So this file no longer builds on its own: it wants a `mariastew` binary for
-# the target architecture sitting beside it, which CI unpacks from the artefact
-# its compile job uploaded. Local iteration never comes through here — `mise
+# So this file does not build on its own: its context is a directory holding
+# `<arch>/mariastew` for each target architecture (`dist/` in CI), and each
+# platform copies its own. Local iteration never comes through here — `mise
 # run mariastew:dev` builds Dockerfile.dev, which still compiles inline
 # because no job feeds it.
 #
@@ -32,7 +31,8 @@ RUN apk add --no-cache aria2 ca-certificates
 
 # --chmod because actions/upload-artifact does not preserve modes, so the
 # binary arrives in the context without its exec bit.
-COPY --chmod=755 mariastew /mariastew
+ARG TARGETARCH
+COPY --chmod=755 ${TARGETARCH}/mariastew /mariastew
 
 EXPOSE 8080
 ENV BIND_ADDR=0.0.0.0:8080
