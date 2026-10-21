@@ -3,6 +3,7 @@ node = "24"
 # rustfmt and clippy are not in the minimal profile mise installs by default,
 # and the check job needs both.
 rust = { version = "1", components = "rustfmt,clippy" }
+just = "latest"
 
 [tasks."css"]
 description = "Rebuild the stylesheet after changing a template"

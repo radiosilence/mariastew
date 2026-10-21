@@ -1,0 +1,4 @@
+### Fixed
+
+- Returning to the page reconnects the download stream, so a phone coming back from the app switcher shows live data rather than whatever it last painted. Datastar reopens its own connection on `visibilitychange`, but only while it still considers the request live — a 200 body that simply ends is the request being over, and it removes that listener on the way out, so a stream iOS killed under a suspended page never came back and the page had to be reloaded ([#386](https://github.com/radiosilence/jaritanet/issues/386))
+- `Dockerfile.dev` copies `build.rs`, so `docker compose` builds again. It has not since the browser script gained a build script to name its hashed filename (0.1.22), which left local development to a compile error about `APP_JS_FILENAME` ([#386](https://github.com/radiosilence/jaritanet/issues/386))

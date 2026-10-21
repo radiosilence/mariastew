@@ -216,6 +216,28 @@ jobs:
           cache-on-failure: true
       - run: cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
 
+  # CHANGELOG.md is generated from changelog.d/ (scripts/changelog.py). A pull
+  # request adds fragments without regenerating it, so only its fragments and
+  # the released versions are checked; one that writes CHANGELOG.md, as a
+  # release does, must write exactly what the fragments make.
+  changelog:
+    name: Changelog
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 2
+      - run: python3 -m unittest scripts/test_changelog.py
+      - env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = "pull_request" ] && git diff --name-only HEAD^1 HEAD | grep -qx CHANGELOG.md; then
+            python3 scripts/changelog.py --check
+          else
+            python3 scripts/changelog.py --lint
+          fi
+
   # The Pulumi component in deploy/pulumi. Typechecked and tested like the
   # crate, and gating the publish, so no chart is released that does not
   # compile against the API it exports.
@@ -386,7 +408,7 @@ jobs:
     name: Checks
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [changes, make-room, check, chart, version, linux-build, container]
+    needs: [changes, make-room, check, changelog, chart, version, linux-build, container]
     if: always()
     steps:
       - env:
