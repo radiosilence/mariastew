@@ -67,22 +67,11 @@ jobs:
           EVENT: ${{ github.event_name }}
           HEAD_REF: ${{ github.head_ref }}
           GH_TOKEN: ${{ github.token }}
-        # The domains a change touches, from its diff. A pull request's is
-        # against its base. A push's is against the last commit on main whose
-        # run passed, so a push whose run was cancelled or failed still
-        # reaches CD with the next one. A manual run, a release, a push with
-        # no passing run in its last two hundred commits, or a diff that cannot
-        # be worked out, runs everything.
-        #
-        # Allowlists, so the question is "did any source of this domain
-        # change?" rather than "was everything recognisably irrelevant?". The
-        # cost is that a new top-level directory of code is invisible here
-        # until it is added below. Markdown is documentation wherever it sits.
-        #
-        # Steps run under `bash -eo pipefail`, where grep finding nothing is
-        # a failing command rather than an answer, so every question is asked
-        # in a condition, and no grep exits early (`-q`) on a pipe whose
-        # writer would then fail.
+        # A push diffs against the last main commit whose run passed, so a
+        # cancelled or failed run's changes reach CD with the next one. Domains
+        # are allowlists: a new top-level directory of code is invisible here
+        # until it is added. Under pipefail, greps run in conditions and never
+        # exit early with -q.
         run: |
           rust=true package=true docker=true release=false
           version_of() { sed -n 's/^version = "\(.*\)"/\1/p' | head -1; }
@@ -220,15 +209,9 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
-      # After mise, which is what puts this cargo on PATH. Shares nothing with
-      # `linux-build`'s caches: those are per musl target, and a release
-      # cross-build has no artefact in common with a host-target debug one.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: check
-          # A pull request restores main's cache but writes none of its own: a
-          # branch's cache is invisible to every other branch and still evicts
-          # from the repository's 10GB, which is how main ends up cold.
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
       - run: cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
@@ -300,20 +283,14 @@ jobs:
             exit 1
           fi
 
-  # Compiled here rather than inside `docker build`, because a cargo build in a
-  # Dockerfile is one atomic layer: bumping a single crate recompiles all ~200
-  # of them. rust-cache restores cargo's own cache, which is per-crate, so only
-  # what moved is rebuilt. One runner per architecture, natively, on a pinned
-  # OS version, so musl is the host's own target rather than a cross.
+  # Compiled on the runner rather than in the image (docs/design.md says
+  # why), natively per architecture.
   linux-build:
     name: Build (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     needs: [changes, make-room]
     if: ${{ !cancelled() && needs.changes.outputs.docker == 'true' && (needs.make-room.result == 'success' || needs.make-room.result == 'skipped') }}
     timeout-minutes: 45
-    concurrency:
-      group: linux-build-${{ matrix.arch }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
@@ -332,10 +309,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends musl-tools
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
-          # Pinned, because this is what ships; the floating `rust = "1"` in
-          # mise.toml covers clippy and the tests, where a compiler bump
-          # breaking is the point. Dockerfile.dev keeps its own copy for the
-          # dev image, which ships nowhere.
+          # Pinned, because this is what ships; `check` floats.
           toolchain: "1.97"
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -366,9 +340,6 @@ jobs:
     timeout-minutes: 20
     needs: [changes, linux-build]
     if: ${{ !cancelled() && needs.linux-build.result == 'success' }}
-    concurrency:
-      group: container-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-      cancel-in-progress: true
     permissions:
       contents: read
       packages: write

@@ -122,8 +122,8 @@ template is [docs/frontend.md](docs/frontend.md).
 
 One workflow, `.github/workflows/ci-cd.yml`, checks a change and then ships it
 in the same run, so what ships is what was checked. Its `Checks` job is the
-only status branch protection requires; it passes when every other CI job
-either passed or was skipped.
+only status a ruleset on `main` should require; it passes when every other CI
+job either passed or was skipped.
 
 Jobs skip when a change does not touch their domain. `changes` diffs a pull
 request against its base and a push against the last commit on main whose run
