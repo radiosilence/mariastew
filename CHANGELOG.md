@@ -5,6 +5,12 @@ All notable changes to mariastew are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- Updated dependencies to fix RustSec advisories in quinn-proto (RUSTSEC-2026-0338 to 0342), rustls (RUSTSEC-2026-0285/0346/0348/0349), rustls-webpki (RUSTSEC-2026-0382) and webpki-root-certs (RUSTSEC-2026-0383).
+
 ## [0.2.1] - 2026-08-23
 
 ### Added
