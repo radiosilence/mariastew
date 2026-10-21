@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `latest`, which no longer moves on every push. The release jobs now run only
   after every check has passed, and a failed release is retried by running the
   workflow manually.
+  
+### Security
+
+- Updated dependencies to fix RustSec advisories in quinn-proto (RUSTSEC-2026-0338 to 0342), rustls (RUSTSEC-2026-0285/0346/0348/0349), rustls-webpki (RUSTSEC-2026-0382) and webpki-root-certs (RUSTSEC-2026-0383).
 
 ## [0.2.1] - 2026-08-23
 
