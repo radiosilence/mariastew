@@ -1,11 +1,10 @@
 # Changelog
 
-All notable changes to mariastew are documented in this file.
+## Unreleased
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Security
 
-## [Unreleased]
+- Updated dependencies to fix RustSec advisories in quinn-proto (RUSTSEC-2026-0338 to 0342), rustls (RUSTSEC-2026-0285/0346/0348/0349), rustls-webpki (RUSTSEC-2026-0382) and webpki-root-certs (RUSTSEC-2026-0383).
 
 ### Added
 
@@ -16,19 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **One CI/CD pipeline, gated by a single `Checks` status.** Jobs run only for
-  the domains a change touches, so a docs or chart change no longer compiles
-  two release binaries. The image is built once per commit and promoted by
-  retagging: `main` follows main, and a release adds the version tags and
-  `latest`, which no longer moves on every push. The release jobs now run only
-  after every check has passed, and a failed release is retried by running the
-  workflow manually.
-  
-### Security
+- **One CI/CD pipeline, gated by a single `Checks` status.** Jobs run only for the domains a change touches, so a docs or chart change no longer compiles two release binaries. The image is built once per commit and promoted by retagging: `main` follows main, and a release adds the version tags and `latest`, which no longer moves on every push. The release jobs now run only after every check has passed, and a failed release is retried by running the workflow manually.
 
-- Updated dependencies to fix RustSec advisories in quinn-proto (RUSTSEC-2026-0338 to 0342), rustls (RUSTSEC-2026-0285/0346/0348/0349), rustls-webpki (RUSTSEC-2026-0382) and webpki-root-certs (RUSTSEC-2026-0383).
+### Internal
 
-## [0.2.1] - 2026-08-23
+- **Releases are cut with `just release`.** It opens a `release-vX.Y.Z` pull request that bumps every version CI compares and turns the changelog fragments in `changelog.d/` into the release; CHANGELOG.md is now generated from those fragments.
+
+## 0.2.1
 
 ### Added
 
@@ -49,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Nothing needed relaxing to fit: no inline handlers, no inline styles, no
   `data:` URIs, and every script and image already came from this origin.
 
-## [0.2.0] - 2026-08-23
+## 0.2.0
 
 ### Added
 
@@ -74,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release tags lose their `mariastew-` prefix: one repository releasing one
   thing needs no way to say which.
 
-## [0.1.29] - 2026-08-19
+## 0.1.29
 
 ### Fixed
 
@@ -90,14 +83,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The heartbeat replaces axum's keep-alive. Both stop a proxy timing out an idle connection; only one of them reaches the page, and two mechanisms firing at different rates is one more thing to hold in mind than there needs to be ([#390](https://github.com/radiosilence/jaritanet/issues/390))
 
-## [0.1.28] - 2026-08-09
+## 0.1.28
 
 ### Fixed
 
 - Returning to the page reconnects the download stream, so a phone coming back from the app switcher shows live data rather than whatever it last painted. Datastar reopens its own connection on `visibilitychange`, but only while it still considers the request live — a 200 body that simply ends is the request being over, and it removes that listener on the way out, so a stream iOS killed under a suspended page never came back and the page had to be reloaded ([#386](https://github.com/radiosilence/jaritanet/issues/386))
 - `Dockerfile.dev` copies `build.rs`, so `docker compose` builds again. It has not since the browser script gained a build script to name its hashed filename (0.1.22), which left local development to a compile error about `APP_JS_FILENAME` ([#386](https://github.com/radiosilence/jaritanet/issues/386))
 
-## [0.1.27] - 2026-08-08
+## 0.1.27
 
 ### Added
 
@@ -110,14 +103,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A download's state is plain text while it is still moving, rather than each one getting an outlined pill of its own. That spent the loudest shape in the row on "downloading", which the progress bar directly underneath was already saying better; the filled green badge a finished download gets now has the glance to itself, which is what it was introduced for ([#373](https://github.com/radiosilence/jaritanet/issues/373))
 - Flat surfaces and smaller radii throughout — daisyUI 5's gradient overlay and surface texture are off, and nothing is a pill. The header carries a border instead of a drop shadow, which on a dark surface was drawing a separation the eye could not see ([#373](https://github.com/radiosilence/jaritanet/issues/373))
 
-## [0.1.26] - 2026-08-08
+## 0.1.26
 
 ### Fixed
 
 - A magnet no longer announces itself as downloaded before it starts downloading. The metadata pass reaches aria2's `Complete` when the *torrent file* arrives, and every reading taken off its byte counters was answering about the wrong download: the row turned green and said "downloaded" beside the torrent's name, filled its bar, showed "0s left", and the completion watch sent Telegram a finished message and swept a directory nothing had been written to. A metadata pass now measures nothing (`Download::display_totals`), so the bar is indeterminate, the size and ETA are absent, and the state stays *finding peers* until the real download exists ([#372](https://github.com/radiosilence/jaritanet/issues/372))
 - No ETA before the size is known. A resolving magnet moves bytes at a real rate with no total to spend them against, which divided out to "0s left" on a torrent that had not started ([#372](https://github.com/radiosilence/jaritanet/issues/372))
 
-## [0.1.25] - 2026-08-08
+## 0.1.25
 
 ### Removed
 
@@ -127,7 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Closing the add dialog clears `$addStatus` whatever it held. A success was deliberately left set for the toast to keep reading, which made the toast the only thing that ever cleared it — and the dialog closes itself on a success, so an `ok` outliving one attempt shuts the next dialog as soon as any signal moves ([#350](https://github.com/radiosilence/jaritanet/issues/350))
 
-## [0.1.24] - 2026-08-08
+## 0.1.24
 
 ### Fixed
 
@@ -139,7 +132,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - aria2 creates the followed download stopped (`--pause-metadata`), so the filter's selection lands before any content is fetched. The add no longer pauses it — that raced with aria2's own stop, fetched the whole torrent meanwhile, and stranded the download outright if the process died in the window ([#362](https://github.com/radiosilence/jaritanet/issues/362))
 
-## [0.1.23] - 2026-08-08
+## 0.1.23
 
 ### Fixed
 
@@ -149,14 +142,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A restored torrent being re-hashed says "checking files" rather than "downloaded". aria2 counts every piece as complete before it starts checking them, so the state that answered first was the wrong one for the longest wait a deploy has ([#359](https://github.com/radiosilence/jaritanet/issues/359))
 - The bar and the bytes beside it follow the hash check while one runs, rather than sitting at whatever the download reached ([#359](https://github.com/radiosilence/jaritanet/issues/359))
 
-## [0.1.22] - 2026-08-08
+## 0.1.22
 
 ### Added
 
 - `web/app.ts` is now typechecked and bundled with rolldown into a content-hashed `assets/app-<hash>.js`, so a deploy's new script can no longer be served from a browser cache still holding the old one ([#340](https://github.com/radiosilence/jaritanet/issues/340))
 - `mise run mariastew:icons` adds a macro to `templates/icons.html` for any `icons::<name>` a template calls that isn't defined yet, sourced from the `lucide-static` package ([#357](https://github.com/radiosilence/jaritanet/issues/357))
 
-## [0.1.21] - 2026-08-08
+## 0.1.21
 
 ### Changed
 
@@ -169,7 +162,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stop the "Added" banner flashing up on every page load ([#353](https://github.com/radiosilence/jaritanet/issues/353), [#356](https://github.com/radiosilence/jaritanet/pull/356))
 - Create a folder without pasting a magnet first — the button was validating the add form it happens to sit inside ([#353](https://github.com/radiosilence/jaritanet/issues/353), [#356](https://github.com/radiosilence/jaritanet/pull/356))
 
-## [0.1.20] - 2026-08-08
+## 0.1.20
 
 ### Changed
 
@@ -179,13 +172,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Use magnet icon for add button
 - Every mutation is now bounded: 10s on any aria2 call, 10s on `mkdir`, and one second of retries on a removal ([#354](https://github.com/radiosilence/jaritanet/issues/354))
 
-## [0.1.19] - 2026-08-08
+## 0.1.19
 
 ### Added
 
 - Show the running version under the list ([#341](https://github.com/radiosilence/jaritanet/issues/341), [#344](https://github.com/radiosilence/jaritanet/pull/344))
 
-## [0.1.18] - 2026-08-08
+## 0.1.18
 
 ### Added
 
@@ -195,86 +188,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Skeleton for the picker's wait, not the last folder dimmed ([#294](https://github.com/radiosilence/jaritanet/issues/294), [#331](https://github.com/radiosilence/jaritanet/pull/331))
 
-## [0.1.17] - 2026-08-08
+## 0.1.17
 
 ### Performance
 
 - Compile mariastew and auth on the runner, not in docker build ([#289](https://github.com/radiosilence/jaritanet/issues/289), [#327](https://github.com/radiosilence/jaritanet/pull/327))
 
-## [0.1.16] - 2026-08-08
+## 0.1.16
 
 ### Added
 
 - Read the clipboard when the add sheet opens ([#300](https://github.com/radiosilence/jaritanet/issues/300), [#324](https://github.com/radiosilence/jaritanet/pull/324))
 
-## [0.1.15] - 2026-08-08
+## 0.1.15
 
 ### Fixed
 
 - A session for aria2, so a deploy stops erasing the queue ([#288](https://github.com/radiosilence/jaritanet/issues/288), [#329](https://github.com/radiosilence/jaritanet/pull/329))
 - One poll for the whole process, and send rows not the list ([#317](https://github.com/radiosilence/jaritanet/issues/317), [#323](https://github.com/radiosilence/jaritanet/pull/323))
 
-## [0.1.14] - 2026-08-08
+## 0.1.14
 
 ### Added
 
 - Draw the icons with Lucide, not unicode ([#296](https://github.com/radiosilence/jaritanet/issues/296), [#302](https://github.com/radiosilence/jaritanet/pull/302))
 
-## [0.1.13] - 2026-08-08
+## 0.1.13
 
 ### Fixed
 
 - A Done button that actually clears the download ([#316](https://github.com/radiosilence/jaritanet/issues/316), [#321](https://github.com/radiosilence/jaritanet/pull/321))
 
-## [0.1.12] - 2026-08-08
+## 0.1.12
 
 ### Fixed
 
 - Clock times in the log, and stop the state flapping ([#298](https://github.com/radiosilence/jaritanet/issues/298), [#320](https://github.com/radiosilence/jaritanet/pull/320))
 
-## [0.1.11] - 2026-08-08
+## 0.1.11
 
 ### Fixed
 
 - Sweep the tree on completion, not aria2's file list ([#315](https://github.com/radiosilence/jaritanet/issues/315), [#319](https://github.com/radiosilence/jaritanet/pull/319))
 
-## [0.1.10] - 2026-08-08
+## 0.1.10
 
 ### Added
 
 - Rate and time left on the collapsed row ([#308](https://github.com/radiosilence/jaritanet/issues/308), [#318](https://github.com/radiosilence/jaritanet/pull/318))
 
-## [0.1.9] - 2026-08-08
+## 0.1.9
 
 ### Added
 
 - Say what aria2 is actually doing ([#298](https://github.com/radiosilence/jaritanet/issues/298), [#307](https://github.com/radiosilence/jaritanet/pull/307))
 
-## [0.1.8] - 2026-08-08
+## 0.1.8
 
 ### Fixed
 
 - Show the add, and let a destination be undone ([#292](https://github.com/radiosilence/jaritanet/issues/292))
 
-## [0.1.7] - 2026-08-08
+## 0.1.7
 
 ### Fixed
 
 - A picker that says it is working, and a reachable aria2 ([#287](https://github.com/radiosilence/jaritanet/issues/287))
 
-## [0.1.6] - 2026-08-08
+## 0.1.6
 
 ### Added
 
 - The add flow tells you what happened ([#286](https://github.com/radiosilence/jaritanet/issues/286))
 
-## [0.1.5] - 2026-08-08
+## 0.1.5
 
 ### Fixed
 
 - bt-metadata-only stops followedBy from ever appearing — drop it ([#284](https://github.com/radiosilence/jaritanet/issues/284))
 
-## [0.1.4] - 2026-08-08
+## 0.1.4
 
 ### Fixed
 
@@ -282,7 +275,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A selective torrent is finished when its selected files are, not when total_length is ([#282](https://github.com/radiosilence/jaritanet/issues/282))
 - Select the right files, and stop lying about being done ([#281](https://github.com/radiosilence/jaritanet/issues/281))
 
-## [0.1.3] - 2026-08-08
+## 0.1.3
 
 ### Added
 
@@ -292,7 +285,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Wrap long directory names instead of clipping them
 
-## [0.1.2] - 2026-08-08
+## 0.1.2
 
 ### Added
 
@@ -303,13 +296,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Downloads actually download, and the UI works on a phone
 
-## [0.1.1] - 2026-08-08
+## 0.1.1
 
 ### Fixed
 
 - Use colon syntax for data-on so Datastar binds it
 
-## [0.1.0] - 2026-08-07
+## 0.1.0
 
 ### Added
 
