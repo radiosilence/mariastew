@@ -3,6 +3,8 @@ node = "24"
 # rustfmt and clippy are not in the minimal profile mise installs by default,
 # and the check job needs both.
 rust = { version = "1", components = "rustfmt,clippy" }
+actionlint = "1.7.12"
+shellcheck = "0.11.0"
 
 [tasks."css"]
 description = "Rebuild the stylesheet after changing a template"
@@ -51,3 +53,7 @@ run = "./scripts/seed-dev-fixtures.ts"
 [tasks."seed:reset"]
 description = "Wipe the local tv/movies roots and reseed from scratch"
 run = "./scripts/seed-dev-fixtures.ts --reset"
+
+[tasks.actionlint]
+description = "Lint GitHub Actions workflows"
+run = "actionlint"
