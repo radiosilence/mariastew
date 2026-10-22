@@ -1305,7 +1305,7 @@ mod tests {
         }
         .render()
         .unwrap();
-        assert!(page.contains(r#"data-effect="if ($addStatus === 'ok') el.close()""#));
+        assert!(page.contains(r#"data-effect="if ($addStatus === 'ok') el.close();"#));
         assert!(page.contains("ms.resetMagnets($magnetRows)"));
         assert!(
             !page.contains("toast"),
@@ -1343,7 +1343,11 @@ mod tests {
         }
         .render()
         .unwrap();
-        assert!(page.contains(r#"data-signals__ifmissing="{addStatus: '', addMessage: ''}""#));
+        assert!(
+            page.contains(
+                r#"data-signals__ifmissing="{addStatus: '', addMessage: '', addDone: []}""#
+            )
+        );
         assert!(
             !page.contains("$add."),
             "a nested add signal is back: {page}"
