@@ -1306,7 +1306,7 @@ mod tests {
         .render()
         .unwrap();
         assert!(page.contains(r#"data-effect="if ($addStatus === 'ok') el.close()""#));
-        assert!(page.contains(r#"$magnet.value = ''"#));
+        assert!(page.contains("ms.resetMagnets($magnetRows)"));
         assert!(
             !page.contains("toast"),
             "the toast is back, and with it something that has to own its own dismissal: {page}"

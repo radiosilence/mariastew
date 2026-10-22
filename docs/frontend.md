@@ -44,6 +44,21 @@ where a wrong value is visible and `/add` says what is wrong with it. A
 refused prompt and a browser with no clipboard API are both no-ops: either way
 there is a field to type into.
 
+Several magnets go in as several rows, one field each, under one destination.
+A row is a clone of the first and carries no Datastar attributes of its own;
+paste, remove and Enter are delegated from the list, so a row added later
+needs nothing wired up. A clipboard holding more than one magnet — a list
+copied from a forum post or a chat — fills a row per magnet, from either the
+Paste button or a native paste, because an `<input>` would otherwise drop the
+line breaks and run them together into one invalid link.
+
+`/add` takes the batch whole for validation and one magnet at a time for
+aria2: a bad row refuses everything, since nothing has been added yet and that
+row is the one to fix, but a magnet already in the list does not stop the
+others. When some went in and some did not, the response names the ones that
+did, and the sheet drops their rows, so pressing Add again sends only what is
+left instead of failing every row that already succeeded.
+
 The field is not autofocused. A keyboard on every open costs half the sheet,
 and the usual flow — paste, then Add — never types into it. Tapping the field
 still opens one.
