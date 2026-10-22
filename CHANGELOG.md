@@ -6,6 +6,13 @@
 
 - Updated dependencies to fix RustSec advisories in quinn-proto (RUSTSEC-2026-0338 to 0342), rustls (RUSTSEC-2026-0285/0346/0348/0349), rustls-webpki (RUSTSEC-2026-0382) and webpki-root-certs (RUSTSEC-2026-0383).
 
+### Added
+
+- **Several magnets in one add.** The sheet takes a row per magnet, with a
+  button to add another, and a clipboard holding several magnets fills one row
+  each. All of them go to the same destination. Rows that were added drop out
+  of the sheet when others were refused, so a retry sends only what is left.
+
 ### Changed
 
 - **One CI/CD pipeline, gated by a single `Checks` status.** Jobs run only for the domains a change touches, so a docs or chart change no longer compiles two release binaries. The image is built once per commit and promoted by retagging: `main` follows main, and a release adds the version tags and `latest`, which no longer moves on every push. The release jobs now run only after every check has passed, and a failed release is retried by running the workflow manually.
