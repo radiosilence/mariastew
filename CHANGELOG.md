@@ -1,17 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 ### Security
 
 - Updated dependencies to fix RustSec advisories in quinn-proto (RUSTSEC-2026-0338 to 0342), rustls (RUSTSEC-2026-0285/0346/0348/0349), rustls-webpki (RUSTSEC-2026-0382) and webpki-root-certs (RUSTSEC-2026-0383).
-
-### Added
-
-- **Several magnets in one add.** The sheet takes a row per magnet, with a
-  button to add another, and a clipboard holding several magnets fills one row
-  each. All of them go to the same destination. Rows that were added drop out
-  of the sheet when others were refused, so a retry sends only what is left.
 
 ### Changed
 
