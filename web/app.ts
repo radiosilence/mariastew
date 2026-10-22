@@ -1,6 +1,10 @@
 declare global {
   var ms: {
-    pasteInto(field: HTMLInputElement): void;
+    magnetRowClick(evt: MouseEvent): void;
+    pasteMany(evt: ClipboardEvent): void;
+    addMagnetRow(rows: HTMLElement): void;
+    resetMagnets(rows: HTMLElement): void;
+    dropMagnets(rows: HTMLElement, done: string[]): void;
     clickOnEnter(evt: KeyboardEvent, button: HTMLButtonElement): void;
     browseUrl(evt: Event): string | null;
     streamEvent(
@@ -40,6 +44,63 @@ let streamLastSeen = Date.now();
  * fixes that. Cleared by anything the server actually serves. */
 let streamRefused = false;
 
+/** The magnet links in some text, when there is more than one of them. */
+function severalMagnets(text: string) {
+  const magnets = text.split(/\s+/).filter((t) => t.startsWith("magnet:?"));
+  return magnets.length > 1 ? magnets : null;
+}
+
+/** A blank row after `row`, cloned from it so every row is the same markup. */
+function rowAfter(row: Element) {
+  const next = row.cloneNode(true) as HTMLElement;
+  next.querySelector("input")!.value = "";
+  row.after(next);
+  return next;
+}
+
+/**
+ * Fill `row` with whatever was pasted, and the rows after it too when the
+ * text holds several magnets — a list copied from somewhere else goes in as
+ * one row each rather than run together in one field, which an `<input>`
+ * would do by dropping the line breaks.
+ */
+function fillFrom(row: Element, text: string) {
+  const [first, ...rest] = severalMagnets(text) ?? [text.trim()];
+  row.querySelector("input")!.value = first;
+  let last = row;
+  for (const magnet of rest) {
+    last = rowAfter(last);
+    last.querySelector("input")!.value = magnet;
+  }
+}
+
+/**
+ * Put the clipboard into a row, from that row's own Paste button.
+ *
+ * `readText()` is gated on transient user activation everywhere and, on iOS,
+ * on a Paste bubble Safari draws itself and no page can suppress. That gate
+ * is why this hangs off a button beside the field rather than the tap that
+ * opens the sheet: Safari anchors its bubble to the touch that asked, so
+ * asking from the header put a Paste button at the top of the screen for a
+ * field at the bottom of it, and asked on every open whether or not there
+ * was anything anyone wanted pasted (#353).
+ *
+ * Whatever is on the clipboard goes in, magnet or not. Filtering to magnets
+ * made sense while the read was automatic, since nothing unasked-for should
+ * land in a field — but a button that answers an explicit tap by doing
+ * nothing reads as broken, where a wrong value is visible and `/add` says
+ * what is wrong with it.
+ *
+ * A refused prompt and a browser with no clipboard API are both no-ops
+ * rather than errors: either way there is a field to type into.
+ */
+function pasteInto(row: Element) {
+  navigator.clipboard?.readText().then(
+    (text) => fillFrom(row, text),
+    () => {},
+  );
+}
+
 /**
  * The behaviours that do not belong in an attribute.
  *
@@ -54,32 +115,52 @@ let streamRefused = false;
  */
 globalThis.ms = {
   /**
-   * Put the clipboard into a field, from that field's own Paste button.
-   *
-   * `readText()` is gated on transient user activation everywhere and, on iOS,
-   * on a Paste bubble Safari draws itself and no page can suppress. That gate
-   * is why this hangs off a button beside the field rather than the tap that
-   * opens the sheet: Safari anchors its bubble to the touch that asked, so
-   * asking from the header put a Paste button at the top of the screen for a
-   * field at the bottom of it, and asked on every open whether or not there
-   * was anything anyone wanted pasted (#353).
-   *
-   * Whatever is on the clipboard goes in, magnet or not. Filtering to magnets
-   * made sense while the read was automatic, since nothing unasked-for should
-   * land in a field — but a button that answers an explicit tap by doing
-   * nothing reads as broken, where a wrong value is visible and `/add` says
-   * what is wrong with it.
-   *
-   * A refused prompt and a browser with no clipboard API are both no-ops
-   * rather than errors: either way there is a field to type into.
+   * Paste into, or remove, the row whose button was pressed. Delegated from
+   * the list of rows, so a row cloned in later needs nothing wired up.
    */
-  pasteInto(field) {
-    navigator.clipboard?.readText().then(
-      (text) => {
-        field.value = text.trim();
-      },
-      () => {},
+  magnetRowClick(evt) {
+    const button = (evt.target as HTMLElement).closest<HTMLElement>(
+      "[data-action]",
     );
+    const row = button?.closest("[data-magnet-row]");
+    if (!button || !row) return;
+    if (button.dataset.action === "remove") row.remove();
+    else pasteInto(row);
+  },
+
+  /**
+   * A paste of several magnets into one field spreads them over rows, the
+   * same as the Paste button does. Anything else is left to the browser.
+   */
+  pasteMany(evt) {
+    const row = (evt.target as HTMLElement).closest("[data-magnet-row]");
+    const text = evt.clipboardData?.getData("text") ?? "";
+    if (!row || !severalMagnets(text)) return;
+    evt.preventDefault();
+    fillFrom(row, text);
+  },
+
+  addMagnetRow(rows) {
+    rowAfter(rows.lastElementChild!);
+  },
+
+  /** Back to one empty row: closing the sheet abandons the attempt. */
+  resetMagnets(rows) {
+    while (rows.children.length > 1) rows.lastElementChild!.remove();
+    rows.querySelector("input")!.value = "";
+  },
+
+  /**
+   * Drop the rows the server added, so what is left is what it did not and a
+   * second press sends only those. The last row is emptied rather than
+   * removed, since it is what the next row is cloned from.
+   */
+  dropMagnets(rows, done) {
+    for (const input of rows.querySelectorAll("input")) {
+      if (!done.includes(input.value.trim())) continue;
+      if (rows.children.length > 1) input.closest("[data-magnet-row]")!.remove();
+      else input.value = "";
+    }
   },
 
   /**
@@ -91,7 +172,7 @@ globalThis.ms = {
    * real button keeps one definition of what it does.
    */
   clickOnEnter(evt, button) {
-    if (evt.key !== "Enter") return;
+    if (evt.key !== "Enter" || !(evt.target instanceof HTMLInputElement)) return;
     evt.preventDefault();
     button.click();
   },

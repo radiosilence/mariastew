@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Several magnets in one add.** The sheet takes a row per magnet, with a
+  button to add another, and a clipboard holding several magnets fills one row
+  each. All of them go to the same destination. Rows that were added drop out
+  of the sheet when others were refused, so a retry sends only what is left.
+
 ### Changed
 
 - **One CI/CD pipeline, gated by a single `Checks` status.** Jobs run only for

@@ -11,6 +11,7 @@ use axum::response::sse::Event;
 use axum::response::{Html, IntoResponse, Response, Sse};
 use axum::routing::{get, post};
 use axum::{Form, Router};
+use axum_extra::extract::Form as MultiForm;
 use futures_util::stream;
 
 use crate::aria2::{Download, Status};
@@ -314,9 +315,12 @@ pub async fn stream(
     Sse::new(s).into_response()
 }
 
+/// One `magnet` per row of the sheet, so the field repeats — which axum's own
+/// `Form` cannot read into a list, hence `MultiForm` on the handler.
 #[derive(serde::Deserialize)]
 pub struct AddForm {
-    pub magnet: String,
+    #[serde(default, rename = "magnet")]
+    pub magnets: Vec<String>,
     pub dir: String,
 }
 
@@ -333,15 +337,13 @@ fn magnet_infohash(magnet: &str) -> Option<&str> {
     Some(after.split('&').next().unwrap_or(after))
 }
 
-/// Validates and starts the metadata pass, then hands the rest to the
-/// background — resolving a magnet's metadata can take real time, and the
-/// browser does not hold a `POST` open for it (production: `NS_BINDING_ABORTED`
-/// around two seconds, followed by a retry that collided with the still-
-/// registered infohash from the abandoned first attempt). `addUri` itself is
-/// not what was slow: aria2 answers with a gid immediately and resolves the
-/// magnet on its own side afterward, so it is safe to run synchronously and
-/// is what makes the already-registered case below a real 4xx rather than
-/// something only the background task ever sees.
+/// Why aria2 would not take a magnet that passed validation.
+#[derive(Clone, Copy, PartialEq)]
+enum Refused {
+    AlreadyListed,
+    Unreachable,
+}
+
 /// The outcome, in a body Datastar will actually read.
 ///
 /// Datastar discards a non-200 response before it ever looks at what came
@@ -355,33 +357,114 @@ fn magnet_infohash(magnet: &str) -> Option<&str> {
 /// the status code no longer carries, the server log does: a rejected add is
 /// still a warning here, so this is a change to what the browser is told, not
 /// to what we can see.
-fn add_outcome(message: Option<&str>) -> Response {
+///
+/// An error also names the magnets that did go in, as `addDone`, so the sheet
+/// can drop their rows and leave only what still needs attention. Sending the
+/// rows back again would add nothing and fail them as already listed.
+fn add_outcome(message: Option<&str>, done: &[&str]) -> Response {
     // Flat signal names, not one nested `add` object — see the note on
     // `data-signals__ifmissing` in page.html for why the client cannot read a
     // nested one reliably.
     let body = match message {
         None => serde_json::json!({ "addStatus": "ok" }),
-        Some(m) => serde_json::json!({ "addStatus": "error", "addMessage": m }),
+        Some(m) => serde_json::json!({ "addStatus": "error", "addMessage": m, "addDone": done }),
     };
     (StatusCode::OK, axum::Json(body)).into_response()
 }
 
+/// What to say when some of a batch did not go in. A batch of one says what
+/// a single add always has.
+fn refused_message(total: usize, refused: &[Refused]) -> String {
+    if let [only] = refused
+        && total == 1
+    {
+        return match only {
+            Refused::AlreadyListed => "That is already in the list.",
+            Refused::Unreachable => "The download service could not be reached.",
+        }
+        .to_string();
+    }
+    let count = |r| refused.iter().filter(|&&x| x == r).count();
+    let mut reasons = Vec::new();
+    match count(Refused::AlreadyListed) {
+        0 => {}
+        1 => reasons.push("1 is already in the list".to_string()),
+        n => reasons.push(format!("{n} are already in the list")),
+    }
+    match count(Refused::Unreachable) {
+        0 => {}
+        n => reasons.push(format!("{n} could not reach the download service")),
+    }
+    format!(
+        "Added {} of {total}; {}.",
+        total - refused.len(),
+        reasons.join(", ")
+    )
+}
+
+/// Validates every row, then starts each magnet's metadata pass and hands the
+/// rest to the background — resolving a magnet's metadata can take real time,
+/// and the browser does not hold a `POST` open for it (production:
+/// `NS_BINDING_ABORTED` around two seconds, followed by a retry that collided
+/// with the still-registered infohash from the abandoned first attempt).
+/// `addUri` itself is not what was slow: aria2 answers with a gid immediately
+/// and resolves the magnet on its own side afterward, so it is safe to run
+/// synchronously, once per magnet, and is what makes the already-registered
+/// case below a real answer rather than something only the background task
+/// ever sees.
+///
+/// Validation is all or nothing, because nothing has been added yet when it
+/// fails and the row at fault is the one to fix. `addUri` is per magnet: one
+/// already in the list is no reason to refuse the others.
 pub async fn add(
     State(state): State<AppState>,
     CurrentSession(session): CurrentSession,
-    Form(form): Form<AddForm>,
+    MultiForm(form): MultiForm<AddForm>,
 ) -> Response {
+    // Blank rows are rows someone added and never filled, not mistakes.
+    let rows: Vec<(usize, &str)> = form
+        .magnets
+        .iter()
+        .map(|m| m.trim())
+        .enumerate()
+        .filter(|(_, m)| !m.is_empty())
+        .collect();
+    if rows.is_empty() {
+        return add_outcome(Some("Paste a magnet link."), &[]);
+    }
     // Rejected at the boundary rather than handed to aria2 to fail on later.
     // A file upload is a different interface for a case that does not come up
     // on a phone.
-    if !is_magnet(&form.magnet) {
-        return add_outcome(Some("That is not a magnet link."));
+    if let Some((row, _)) = rows.iter().find(|(_, m)| !is_magnet(m)) {
+        let message = if form.magnets.len() == 1 {
+            "That is not a magnet link.".to_string()
+        } else {
+            format!("Link {} is not a magnet link.", row + 1)
+        };
+        return add_outcome(Some(&message), &[]);
     }
     let Some(dir) = state.config.resolve(&form.dir) else {
-        return add_outcome(Some("Choose a destination inside the library."));
+        return add_outcome(Some("Choose a destination inside the library."), &[]);
     };
     let dir = dir.to_string_lossy().into_owned();
 
+    let mut done = Vec::new();
+    let mut refused = Vec::new();
+    for &(_, magnet) in &rows {
+        match start_add(&state, &session.sub, magnet, &dir).await {
+            Ok(()) => done.push(magnet),
+            Err(r) => refused.push(r),
+        }
+    }
+
+    if refused.is_empty() {
+        add_outcome(None, &done)
+    } else {
+        add_outcome(Some(&refused_message(rows.len(), &refused)), &done)
+    }
+}
+
+async fn start_add(state: &AppState, sub: &str, magnet: &str, dir: &str) -> Result<(), Refused> {
     // No `bt-metadata-only`: that option means "fetch the metadata and stop"
     // — aria2 never spawns the followed download at all, so `followed_by`
     // below would never appear and every add would run out the clock and
@@ -393,7 +476,7 @@ pub async fn add(
     let metadata_gid = match state
         .aria2
         .add_uri(
-            &form.magnet,
+            magnet,
             serde_json::json!({"dir": dir, "follow-torrent": "mem"}),
         )
         .await
@@ -408,11 +491,11 @@ pub async fn add(
         // cancel a real download. The download list is already on the page —
         // that is where "which one is it" gets answered.
         Err(AppError::Upstream(msg)) if is_already_registered(&msg) => {
-            return add_outcome(Some("That is already in the list."));
+            return Err(Refused::AlreadyListed);
         }
         Err(e) => {
             tracing::error!(error = %e, "add: aria2 refused the magnet");
-            return add_outcome(Some("The download service could not be reached."));
+            return Err(Refused::Unreachable);
         }
     };
 
@@ -424,14 +507,14 @@ pub async fn add(
         .record(&metadata_gid, "looking for peers who have the torrent file");
 
     tokio::spawn(finish_add(
-        state,
-        session.sub,
-        form.magnet,
-        dir,
+        state.clone(),
+        sub.to_string(),
+        magnet.to_string(),
+        dir.to_string(),
         metadata_gid,
     ));
 
-    add_outcome(None)
+    Ok(())
 }
 
 /// Everything about adding a magnet that cannot happen inside the request
@@ -1201,6 +1284,9 @@ mod tests {
             /// standing in for the window a real pause takes to settle. See
             /// [`unpause_settled`].
             unpause_refusals: Arc<Mutex<u32>>,
+            /// Every URI `addUri` has been given, so a magnet offered twice is
+            /// told apart from a batch offering several.
+            added_uris: Arc<Mutex<Vec<String>>>,
         }
 
         fn download_result(gid: &str, status: &str, files: serde_json::Value) -> serde_json::Value {
@@ -1222,20 +1308,27 @@ mod tests {
             Json(body): Json<serde_json::Value>,
         ) -> Json<serde_json::Value> {
             let method = body["method"].as_str().unwrap_or_default().to_string();
-            let calls_so_far = {
-                let mut calls = mock.calls.lock().unwrap();
-                calls.push(method.clone());
-                calls.iter().filter(|m| *m == "aria2.addUri").count()
+            mock.calls.lock().unwrap().push(method.clone());
+            let seen_before = method == "aria2.addUri" && {
+                let uri = body["params"][0][0]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
+                let mut added = mock.added_uris.lock().unwrap();
+                let seen = added.contains(&uri);
+                added.push(uri);
+                seen
             };
             let response = match method.as_str() {
                 // No `bt-metadata-only` field to key off any more — there is
                 // exactly one `addUri` for a magnet's whole life now, so a
-                // second one is the duplicate-infohash bug back, not a
-                // legitimate second call to tell apart from the first.
-                "aria2.addUri" if calls_so_far == 1 => (*mock.metadata_add_result).clone(),
-                "aria2.addUri" => {
+                // second one for the same magnet is the duplicate-infohash bug
+                // back, not a legitimate second call to tell apart from the
+                // first.
+                "aria2.addUri" if seen_before => {
                     panic!("a second addUri means the duplicate-infohash bug is back")
                 }
+                "aria2.addUri" => (*mock.metadata_add_result).clone(),
                 // The add pauses nothing any more: `--pause-metadata` hands
                 // the child over already stopped, which is what closed both
                 // the race with our own pause and the window where aria2 was
@@ -1321,6 +1414,7 @@ mod tests {
                 metadata_outcome,
                 child_status,
                 unpause_refusals: Arc::new(Mutex::new(unpause_refusals)),
+                added_uris: Arc::new(Mutex::new(Vec::new())),
             };
             let app = axum::Router::new().route("/", post(rpc)).with_state(mock);
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1350,7 +1444,7 @@ mod tests {
 
         fn add_form() -> AddForm {
             AddForm {
-                magnet: "magnet:?xt=urn:btih:abc".to_string(),
+                magnets: vec!["magnet:?xt=urn:btih:abc".to_string()],
                 dir: "/mnt/kontent/movies".to_string(),
             }
         }
@@ -1393,7 +1487,11 @@ mod tests {
 
             let response = tokio::time::timeout(
                 StdDuration::from_millis(500),
-                add(State(state), CurrentSession(session()), Form(add_form())),
+                add(
+                    State(state),
+                    CurrentSession(session()),
+                    MultiForm(add_form()),
+                ),
             )
             .await
             .expect("add must return promptly, not wait on the metadata poll");
@@ -1437,7 +1535,12 @@ mod tests {
             .await;
             let state = test_state(mock.url);
 
-            add(State(state), CurrentSession(session()), Form(add_form())).await;
+            add(
+                State(state),
+                CurrentSession(session()),
+                MultiForm(add_form()),
+            )
+            .await;
 
             wait_for_calls(&mock.calls, 5).await;
             assert_eq!(
@@ -1481,7 +1584,12 @@ mod tests {
             let state = test_state(mock.url);
             let activity = state.activity.clone();
 
-            add(State(state), CurrentSession(session()), Form(add_form())).await;
+            add(
+                State(state),
+                CurrentSession(session()),
+                MultiForm(add_form()),
+            )
+            .await;
             wait_for_calls(&mock.calls, 5).await;
 
             let messages: Vec<String> = activity
@@ -1525,7 +1633,12 @@ mod tests {
             .await;
             let state = test_state(mock.url);
 
-            add(State(state), CurrentSession(session()), Form(add_form())).await;
+            add(
+                State(state),
+                CurrentSession(session()),
+                MultiForm(add_form()),
+            )
+            .await;
 
             wait_for_calls(&mock.calls, 4).await;
             assert_eq!(
@@ -1562,7 +1675,12 @@ mod tests {
             .await;
             let state = test_state(mock.url);
 
-            add(State(state), CurrentSession(session()), Form(add_form())).await;
+            add(
+                State(state),
+                CurrentSession(session()),
+                MultiForm(add_form()),
+            )
+            .await;
 
             wait_for_calls(&mock.calls, 7).await;
             assert_eq!(
@@ -1589,7 +1707,12 @@ mod tests {
             .await;
             let state = test_state(mock.url);
 
-            let response = add(State(state), CurrentSession(session()), Form(add_form())).await;
+            let response = add(
+                State(state),
+                CurrentSession(session()),
+                MultiForm(add_form()),
+            )
+            .await;
 
             // The status has to stay 200 for the explanation to survive the
             // trip: Datastar returns early on anything else and never reads
@@ -1604,6 +1727,80 @@ mod tests {
             assert!(
                 body["addMessage"].as_str().is_some_and(|m| !m.is_empty()),
                 "the rejection has to say something, got {body}"
+            );
+        }
+
+        /// A batch is checked whole before anything is added: a row that is
+        /// not a magnet refuses the lot, by its row number, and aria2 never
+        /// hears about the rows around it.
+        #[tokio::test]
+        async fn a_batch_with_one_bad_row_adds_nothing_and_names_the_row() {
+            let mock = mock_server(
+                serde_json::json!({"result": "metadata-gid"}),
+                MetadataOutcome::NeverResolves,
+            )
+            .await;
+            let calls = mock.calls.clone();
+            let state = test_state(mock.url);
+            let form = AddForm {
+                magnets: vec![
+                    "magnet:?xt=urn:btih:abc".to_string(),
+                    String::new(),
+                    "https://example.com/x.torrent".to_string(),
+                ],
+                dir: "/mnt/kontent/movies".to_string(),
+            };
+
+            let response = add(State(state), CurrentSession(session()), MultiForm(form)).await;
+
+            let body = axum::body::to_bytes(response.into_body(), 64 * 1024)
+                .await
+                .expect("a small json body");
+            let body: serde_json::Value =
+                serde_json::from_slice(&body).expect("add answers with json");
+            assert_eq!(body["addMessage"], "Link 3 is not a magnet link.");
+            assert_eq!(body["addDone"], serde_json::json!([]));
+            assert!(calls.lock().unwrap().is_empty(), "aria2 was asked anyway");
+        }
+
+        /// Every magnet in a batch is offered to aria2, and the ones it would
+        /// not take are counted rather than stopping the rest.
+        #[tokio::test]
+        async fn a_batch_reports_how_many_were_already_listed() {
+            let mock = mock_server(
+                serde_json::json!({"error": {"code": 1, "message": "InfoHash abc is already registered."}}),
+                MetadataOutcome::NeverResolves,
+            )
+            .await;
+            let calls = mock.calls.clone();
+            let state = test_state(mock.url);
+            let form = AddForm {
+                magnets: vec![
+                    "magnet:?xt=urn:btih:abc".to_string(),
+                    "magnet:?xt=urn:btih:def".to_string(),
+                ],
+                dir: "/mnt/kontent/movies".to_string(),
+            };
+
+            let response = add(State(state), CurrentSession(session()), MultiForm(form)).await;
+
+            let body = axum::body::to_bytes(response.into_body(), 64 * 1024)
+                .await
+                .expect("a small json body");
+            let body: serde_json::Value =
+                serde_json::from_slice(&body).expect("add answers with json");
+            assert_eq!(
+                body["addMessage"],
+                "Added 0 of 2; 2 are already in the list."
+            );
+            assert_eq!(
+                calls
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|m| *m == "aria2.addUri")
+                    .count(),
+                2
             );
         }
     }
@@ -1670,6 +1867,18 @@ mod tests {
         assert_eq!(
             patch_elements_data("<div>\n  <span>hi</span>\n</div>"),
             "elements <div>\nelements   <span>hi</span>\nelements </div>"
+        );
+    }
+
+    #[test]
+    fn a_partly_refused_batch_says_how_much_went_in_and_why_the_rest_did_not() {
+        assert_eq!(
+            refused_message(1, &[Refused::AlreadyListed]),
+            "That is already in the list."
+        );
+        assert_eq!(
+            refused_message(4, &[Refused::AlreadyListed, Refused::Unreachable]),
+            "Added 2 of 4; 1 is already in the list, 1 could not reach the download service."
         );
     }
 
