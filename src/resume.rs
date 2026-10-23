@@ -273,7 +273,7 @@ mod tests {
         spawn(state.clone());
 
         assert!(
-            settle(|| !mock.selected.lock().unwrap().is_empty()).await,
+            settle(|| mock.unpaused.lock().unwrap().len() >= 2).await,
             "the stranded add was never picked up"
         );
         assert_eq!(

@@ -134,9 +134,16 @@ release binaries and the image). Markdown never counts; anything under
 To add a domain, add an output and a `touches` allowlist to `changes`, gate the
 new job on it with `if:`, and add the job to the `needs` of `Checks`.
 
-To release, bump `version` in `Cargo.toml`, `deploy/pulumi/package.json` and
-`APP_VERSION`; the `Version` job refuses a change where the three disagree.
-Once `Checks` passes on main, CD tags the image the run already built with the
+Every pull request adds a changelog fragment under `changelog.d/unreleased/`
+(see [changelog.d/README.md](changelog.d/README.md)); `CHANGELOG.md` is
+generated from them and never edited by hand, so open pull requests do not
+conflict on it.
+
+To release, run `just release patch|minor|major` (or an exact version), or the
+Release workflow from the Actions tab. Either opens a `release-vX.Y.Z` pull
+request that bumps `Cargo.toml`, `deploy/pulumi/package.json` and
+`APP_VERSION` together and turns the fragments into the release; the `Version`
+job refuses a change where the three disagree. Merging it releases. Once `Checks` passes on main, CD tags the image the run already built with the
 version and `latest`, publishes the chart, and creates the GitHub release, in
 that order, so a release means every artefact exists. Every other push that
 rebuilds the image moves its `main` tag. A failed release is retried by running

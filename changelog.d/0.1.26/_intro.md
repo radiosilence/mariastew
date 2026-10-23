@@ -1,0 +1,4 @@
+### Fixed
+
+- A magnet no longer announces itself as downloaded before it starts downloading. The metadata pass reaches aria2's `Complete` when the *torrent file* arrives, and every reading taken off its byte counters was answering about the wrong download: the row turned green and said "downloaded" beside the torrent's name, filled its bar, showed "0s left", and the completion watch sent Telegram a finished message and swept a directory nothing had been written to. A metadata pass now measures nothing (`Download::display_totals`), so the bar is indeterminate, the size and ETA are absent, and the state stays *finding peers* until the real download exists ([#372](https://github.com/radiosilence/jaritanet/issues/372))
+- No ETA before the size is known. A resolving magnet moves bytes at a real rate with no total to spend them against, which divided out to "0s left" on a torrent that had not started ([#372](https://github.com/radiosilence/jaritanet/issues/372))

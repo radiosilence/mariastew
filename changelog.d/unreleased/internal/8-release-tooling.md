@@ -1,0 +1,1 @@
+- **Releases are cut with `just release`.** It opens a `release-vX.Y.Z` pull request that bumps every version CI compares and turns the changelog fragments in `changelog.d/` into the release; CHANGELOG.md is now generated from those fragments.
