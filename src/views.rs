@@ -611,7 +611,7 @@ mod tests {
         .render()
         .unwrap();
         assert!(
-            page.contains("$addDialog.showModal()") && page.contains(r#"data-on:click=""#),
+            page.contains("$_addDialog.showModal()") && page.contains(r#"data-on:click=""#),
             "add-dialog button markup: {page}"
         );
         // The generic "on" plugin needs the colon (data-on:click) — see the
@@ -1197,11 +1197,11 @@ mod tests {
             "no skeleton rows to stand in for the listing: {browse}"
         );
         assert!(
-            browse.contains(r#"data-show="$browsing""#),
+            browse.contains(r#"data-show="$_browsing""#),
             "the skeleton is not gated on the in-flight signal: {browse}"
         );
         assert!(
-            browse.contains(r#"data-class:invisible="$browsing""#),
+            browse.contains(r#"data-class:invisible="$_browsing""#),
             "the stale listing is still readable underneath: {browse}"
         );
         assert!(
@@ -1252,7 +1252,7 @@ mod tests {
             .0;
         let tag = &mkdir[mkdir.rfind("<button").expect("a button tag")..];
         assert!(
-            tag.contains(r#"data-indicator="browsing""#),
+            tag.contains(r#"data-indicator="_browsing""#),
             "the create-folder button raises a request with no indicator: {tag}"
         );
     }
@@ -1270,8 +1270,8 @@ mod tests {
         }
         .render()
         .unwrap();
-        assert!(page.contains(r#"data-indicator="adding""#));
-        assert!(page.contains(r#"data-attr:disabled="$adding""#));
+        assert!(page.contains(r#"data-indicator="_adding""#));
+        assert!(page.contains(r#"data-attr:disabled="$_adding""#));
         assert!(page.contains("loading-spinner"));
     }
 
@@ -1288,8 +1288,8 @@ mod tests {
         }
         .render()
         .unwrap();
-        assert!(page.contains(r#"data-show="$addStatus === 'error'""#));
-        assert!(page.contains(r#"data-text="$addMessage""#));
+        assert!(page.contains(r#"data-show="$_addStatus === 'error'""#));
+        assert!(page.contains(r#"data-text="$_addMessage""#));
     }
 
     /// The dialog going away is the confirmation, and the row behind it is the
@@ -1305,8 +1305,8 @@ mod tests {
         }
         .render()
         .unwrap();
-        assert!(page.contains(r#"data-effect="if ($addStatus === 'ok') el.close();"#));
-        assert!(page.contains("ms.resetMagnets($magnetRows)"));
+        assert!(page.contains(r#"data-effect="if ($_addStatus === 'ok') el.close();"#));
+        assert!(page.contains("ms.resetMagnets($_magnetRows)"));
         assert!(
             !page.contains("toast"),
             "the toast is back, and with it something that has to own its own dismissal: {page}"
@@ -1326,7 +1326,7 @@ mod tests {
         }
         .render()
         .unwrap();
-        assert!(page.contains(r#"data-on:close="$addStatus = ''; $addMessage = ''"#));
+        assert!(page.contains(r#"data-on:close="$_addStatus = ''; $_addMessage = ''"#));
     }
 
     /// Two flat signals, never one `$add` object. A nested signal is tracked
@@ -1343,11 +1343,9 @@ mod tests {
         }
         .render()
         .unwrap();
-        assert!(
-            page.contains(
-                r#"data-signals__ifmissing="{addStatus: '', addMessage: '', addDone: []}""#
-            )
-        );
+        assert!(page.contains(
+            r#"data-signals__ifmissing="{_addStatus: '', _addMessage: '', _addDone: []}""#
+        ));
         assert!(
             !page.contains("$add."),
             "a nested add signal is back: {page}"
@@ -1450,7 +1448,12 @@ mod tests {
         assert!(!finished.contains("btn-error"));
 
         let unfinished = render(&moving());
-        assert!(unfinished.contains("Cancel &amp; delete"), "{unfinished}");
+        assert!(
+            ["Cancel &amp; delete", "Cancel &#38; delete"]
+                .iter()
+                .any(|label| unfinished.contains(label)),
+            "{unfinished}"
+        );
     }
 
     /// #354: every control that changes something on the server says the press
@@ -1471,7 +1474,7 @@ mod tests {
                 ..moving()
             }),
         ] {
-            for signal in ["pausingabc", "removingabc"] {
+            for signal in ["_pausingabc", "_removingabc"] {
                 assert!(
                     html.contains(&format!(r#"data-indicator="{signal}""#)),
                     "no indicator for {signal}: {html}"
