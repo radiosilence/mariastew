@@ -619,6 +619,13 @@ pub(crate) async fn finish_add_inner(
         .activity
         .record(&child_gid, "torrent file arrived — choosing files");
 
+    // The resolved magnet's own result stays in aria2's stopped list until
+    // something discards it, and nothing else ever would. Best effort: a
+    // leftover one is filtered out of every list anyway.
+    if followed && let Err(e) = state.aria2.remove_download_result(metadata_gid).await {
+        tracing::debug!(gid = %metadata_gid, error = %e, "add: could not discard the resolved magnet");
+    }
+
     // The child's file list is already known the moment it is queryable —
     // aria2 only creates it once it has parsed a complete torrent out of the
     // resolved metadata, so a paused child still answers with every file in
@@ -1433,6 +1440,7 @@ mod tests {
                     mock.change_option_calls.lock().unwrap().push(body.clone());
                     serde_json::json!({"result": "OK"})
                 }
+                "aria2.removeDownloadResult" => serde_json::json!({"result": "OK"}),
                 other => panic!("unexpected aria2 method in test: {other}"),
             };
             let mut envelope = serde_json::json!({"jsonrpc": "2.0", "id": "mariastew"});
@@ -1602,12 +1610,13 @@ mod tests {
             )
             .await;
 
-            wait_for_calls(&mock.calls, 5).await;
+            wait_for_calls(&mock.calls, 6).await;
             assert_eq!(
                 mock.calls.lock().unwrap().as_slice(),
                 [
                     "aria2.addUri",
                     "aria2.tellStatus",
+                    "aria2.removeDownloadResult",
                     "aria2.tellStatus",
                     "aria2.changeOption",
                     "aria2.unpause",
@@ -1650,7 +1659,7 @@ mod tests {
                 MultiForm(add_form()),
             )
             .await;
-            wait_for_calls(&mock.calls, 5).await;
+            wait_for_calls(&mock.calls, 6).await;
 
             let messages: Vec<String> = activity
                 .entries("child-gid")
@@ -1700,12 +1709,13 @@ mod tests {
             )
             .await;
 
-            wait_for_calls(&mock.calls, 4).await;
+            wait_for_calls(&mock.calls, 5).await;
             assert_eq!(
                 mock.calls.lock().unwrap().as_slice(),
                 [
                     "aria2.addUri",
                     "aria2.tellStatus",
+                    "aria2.removeDownloadResult",
                     "aria2.tellStatus",
                     "aria2.changeOption",
                 ],
@@ -1742,7 +1752,7 @@ mod tests {
             )
             .await;
 
-            wait_for_calls(&mock.calls, 7).await;
+            wait_for_calls(&mock.calls, 8).await;
             assert_eq!(
                 mock.calls
                     .lock()
@@ -1895,9 +1905,10 @@ mod tests {
     }
 
     /// aria2 marks the metadata-only pass with this literal prefix for as
-    /// long as it exists. It is swept from the stopped list, where it lingers
-    /// forever after the real download has taken over — but *not* from the
-    /// active one, where it is the only evidence an add happened at all.
+    /// long as it exists. It is swept from the stopped list, where it stays
+    /// after the real download has taken over until the add discards it — but
+    /// *not* from the active one, where it is the only evidence an add
+    /// happened at all.
     #[test]
     fn metadata_only_rows_are_recognised_by_name_and_real_ones_are_not() {
         let metadata = Download {
