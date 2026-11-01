@@ -1,1 +1,1 @@
-- **Cancelling removes the torrent's whole folder tree.** Nested directories it made were left behind, empty.
+- **Cancelling no longer deletes files that were already in the library.** Only the files the torrent was downloading go, along with its control file and the folders it leaves empty.
