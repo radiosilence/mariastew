@@ -32,6 +32,12 @@ pub struct Flow {
     pub expires: Instant,
 }
 
+/// Login flows held at once. `/auth/login` is public and every request to it
+/// starts one, so without a cap anyone could grow the map for as long as they
+/// cared to. Past it the oldest is dropped: a flood can fail a login in
+/// progress, but cannot lock everyone out or exhaust memory.
+const MAX_FLOWS: usize = 1024;
+
 #[derive(Clone, Default)]
 pub struct Sessions {
     sessions: Arc<RwLock<HashMap<String, Session>>>,
@@ -57,23 +63,23 @@ impl Sessions {
             sub: sub.to_string(),
             expires: Instant::now() + ttl,
         };
-        self.sessions.write().await.insert(id.clone(), session);
+        let mut sessions = self.sessions.write().await;
+        let now = Instant::now();
+        sessions.retain(|_, s| now < s.expires);
+        sessions.insert(id.clone(), session);
         id
     }
 
-    /// `None` for an unknown or expired id. Expiry is checked on read rather
-    /// than swept on a timer: the map is small, and a sweeper is a task to keep
-    /// alive for no benefit at this size.
+    /// `None` for an unknown or expired id. Read on every request and every
+    /// open stream's recheck, so it takes the read lock; expired sessions are
+    /// swept when the next one is created rather than here.
     pub async fn get(&self, id: &str) -> Option<Session> {
-        let mut sessions = self.sessions.write().await;
-        match sessions.get(id) {
-            Some(session) if Instant::now() < session.expires => Some(session.clone()),
-            Some(_) => {
-                sessions.remove(id);
-                None
-            }
-            None => None,
-        }
+        self.sessions
+            .read()
+            .await
+            .get(id)
+            .filter(|session| Instant::now() < session.expires)
+            .cloned()
     }
 
     pub async fn delete(&self, id: &str) {
@@ -87,7 +93,18 @@ impl Sessions {
             csrf: csrf.to_string(),
             expires: Instant::now() + ttl,
         };
-        self.flows.write().await.insert(id.clone(), flow);
+        let mut flows = self.flows.write().await;
+        let now = Instant::now();
+        flows.retain(|_, f| now < f.expires);
+        if flows.len() >= MAX_FLOWS
+            && let Some(oldest) = flows
+                .iter()
+                .min_by_key(|(_, f)| f.expires)
+                .map(|(id, _)| id.clone())
+        {
+            flows.remove(&oldest);
+        }
+        flows.insert(id.clone(), flow);
         id
     }
 
@@ -132,6 +149,33 @@ mod tests {
             .await;
         assert!(sessions.take_flow(&id).await.is_some());
         assert!(sessions.take_flow(&id).await.is_none());
+    }
+
+    /// `/auth/login` is public, so the flow map is the one thing an
+    /// unauthenticated caller can grow.
+    #[tokio::test]
+    async fn flows_are_capped_and_the_oldest_goes_first() {
+        let sessions = Sessions::new();
+        let first = sessions.begin_flow("v", "c", Duration::from_secs(60)).await;
+        for _ in 0..MAX_FLOWS {
+            sessions.begin_flow("v", "c", Duration::from_secs(60)).await;
+        }
+        assert_eq!(sessions.flows.read().await.len(), MAX_FLOWS);
+        assert!(sessions.take_flow(&first).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn expired_flows_and_sessions_are_swept_by_the_next_one() {
+        let sessions = Sessions::new();
+        sessions
+            .begin_flow("v", "c", Duration::from_millis(1))
+            .await;
+        sessions.create("alice", Duration::from_millis(1)).await;
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        sessions.begin_flow("v", "c", Duration::from_secs(60)).await;
+        sessions.create("bob", Duration::from_secs(60)).await;
+        assert_eq!(sessions.flows.read().await.len(), 1);
+        assert_eq!(sessions.sessions.read().await.len(), 1);
     }
 
     #[test]

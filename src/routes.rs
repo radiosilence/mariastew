@@ -22,10 +22,9 @@ use crate::poll::RenderedRow;
 use crate::state::AppState;
 use crate::views::{self, DirView, RootView, Row};
 
-/// How often a stream re-checks that its session still exists. Deliberately
-/// not the poll rate: this is a revocation check on a page that may be open for
-/// hours, and it takes the write lock on the session map every time it runs —
-/// a cost worth paying once a second and not ten times.
+/// How often a stream re-checks that its session still exists. Not the poll
+/// rate: a revocation check on a page open for hours does not need to run ten
+/// times a second.
 const SESSION_RECHECK: Duration = Duration::from_secs(1);
 
 /// How often a connection with nothing else to say announces itself.
