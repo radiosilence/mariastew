@@ -66,8 +66,8 @@ pub fn spawn_watcher(state: AppState) {
                     // Announcing these again would be the one behaviour worth
                     // muting; sweeping them again is not. A download that
                     // finished while this process was not running never had a
-                    // sweep at all, and the sweep is a directory walk that
-                    // finds nothing on the ones that did.
+                    // sweep at all, and on the ones that did it finds nothing
+                    // left to delete.
                     if terminal && d.status != Status::Error {
                         sweep_garbage(&state, d).await;
                     }
@@ -144,18 +144,15 @@ async fn sweep_garbage(state: &AppState, d: &Download) {
     let mut deleted = Vec::new();
     for f in &d.files {
         let path = Path::new(&f.path);
-        if !filter::is_garbage(&f.path) || !path.starts_with(dir) || path == dir {
-            continue;
-        }
-        if !matches!(tokio::fs::symlink_metadata(path).await, Ok(m) if m.is_file()) {
-            continue;
-        }
-        if state.config.resolve_existing(&f.path).await.is_none() {
-            tracing::warn!(path = %f.path, "refusing to delete a garbage file outside any root");
-            continue;
-        }
-        if let Err(e) = tokio::fs::remove_file(path).await {
-            tracing::warn!(path = %f.path, error = %e, "failed to delete garbage file");
+        // `completed_length` is aria2 saying it wrote to the file. A listed
+        // path it never wrote may hold something else by now, such as artwork
+        // a media server put there.
+        if !filter::is_garbage(&f.path)
+            || f.completed_length == 0
+            || !path.starts_with(dir)
+            || path == dir
+            || !routes::remove_contained(state, &f.path).await
+        {
             continue;
         }
         let _ = tokio::fs::remove_file(format!("{}.aria2", f.path)).await;
@@ -413,6 +410,48 @@ mod tests {
     /// Links are read, never followed. A link is not a file this download
     /// wrote, and resolving one would let a name inside the tree decide what
     /// gets unlinked outside it.
+    /// A directory link inside a root still reaches somewhere else in the
+    /// library, and the file there is not this download's.
+    #[tokio::test]
+    async fn sweep_garbage_does_not_delete_through_a_linked_directory() {
+        let root = temp_root("dir-symlink").await;
+        let elsewhere = root.join("Another.Release");
+        let poster = elsewhere.join("poster.jpg");
+        touch(&poster).await;
+        std::os::unix::fs::symlink(&elsewhere, root.join("Some.Release")).unwrap();
+
+        let through_link = root.join("Some.Release/poster.jpg");
+        let d = download(&root, vec![file(1, through_link.to_str().unwrap(), false)]);
+        sweep_garbage(&state(root.clone()), &d).await;
+
+        assert!(
+            poster.exists(),
+            "a file reached through a linked directory was deleted"
+        );
+        let _ = tokio::fs::remove_dir_all(&root).await;
+    }
+
+    /// A path the torrent lists but aria2 never wrote may hold something else
+    /// by now, such as artwork a media server put there.
+    #[tokio::test]
+    async fn sweep_garbage_leaves_a_listed_path_aria2_never_wrote() {
+        let root = temp_root("unwritten").await;
+        let poster = root.join("Some.Release/poster.jpg");
+        touch(&poster).await;
+
+        let d = download(
+            &root,
+            vec![File {
+                completed_length: 0,
+                ..file(1, poster.to_str().unwrap(), false)
+            }],
+        );
+        sweep_garbage(&state(root.clone()), &d).await;
+
+        assert!(poster.exists(), "a file aria2 never wrote to was deleted");
+        let _ = tokio::fs::remove_dir_all(&root).await;
+    }
+
     #[tokio::test]
     async fn sweep_garbage_does_not_follow_a_symlink_out_of_the_tree() {
         let root = temp_root("symlink").await;
@@ -424,7 +463,13 @@ mod tests {
         let link = release.join("cover.jpg");
         std::os::unix::fs::symlink(&target, &link).unwrap();
 
-        let d = download(&root, vec![file(1, movie.to_str().unwrap(), true)]);
+        let d = download(
+            &root,
+            vec![
+                file(1, movie.to_str().unwrap(), true),
+                file(2, link.to_str().unwrap(), false),
+            ],
+        );
         sweep_garbage(&state(root.clone()), &d).await;
 
         assert!(target.exists(), "a symlink's target must never be unlinked");

@@ -779,15 +779,15 @@ pub async fn resume(State(state): State<AppState>, Path(gid): Path<String>) -> A
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
-/// Delete a torrent's on-disk remains: every file plus its `.aria2` control
-/// file, then the directories the torrent made that this leaves empty. Every
-/// path is re-checked through `resolve_existing` immediately before the
-/// delete: a path aria2 hands back is still a path this process is about to
-/// unlink, and `resolve` alone only decides about the name. Failures are
-/// logged, not fatal: the download is already out of the queue either way.
+/// Delete a torrent's on-disk remains: every selected file plus its `.aria2`
+/// control file, the torrent's own control file, and the directories that
+/// leaves empty. Deselected files are left alone, because a torrent added into
+/// a folder that already holds some of its files is deselected for exactly
+/// those. Failures are logged, not fatal: the download is already out of the
+/// queue either way.
 async fn delete_partial(state: &AppState, status: &Download) {
     let mut deleted = Vec::new();
-    for f in &status.files {
+    for f in status.files.iter().filter(|f| f.selected) {
         if remove_contained(state, &f.path).await {
             let _ = tokio::fs::remove_file(format!("{}.aria2", f.path)).await;
             deleted.push(std::path::PathBuf::from(&f.path));
@@ -803,35 +803,41 @@ async fn delete_partial(state: &AppState, status: &Download) {
     remove_emptied_dirs(state, std::path::Path::new(&status.dir), &deleted).await;
 }
 
-/// Unlink `path` if it exists and is inside a root. A path that was never
-/// written is skipped quietly — every deselected file that never arrived is
-/// one — and one that exists outside every root is refused out loud.
-async fn remove_contained(state: &AppState, path: &str) -> bool {
-    if tokio::fs::symlink_metadata(path).await.is_err() {
+/// Unlink `path` if it is a regular file inside a root, reached through no
+/// symlink. The one gate every deletion from the library goes through. A path
+/// that is not there is skipped quietly — every deselected file that never
+/// arrived is one — and one that resolves outside the roots, or through a
+/// link, is refused out loud.
+pub(crate) async fn remove_contained(state: &AppState, path: &str) -> bool {
+    if !matches!(tokio::fs::symlink_metadata(path).await, Ok(m) if m.is_file()) {
         return false;
     }
-    if state.config.resolve_existing(path).await.is_none() {
-        tracing::warn!(%path, "refusing to delete a path outside any root");
+    if state.config.resolve_unlinked(path).await.is_none() {
+        tracing::warn!(%path, "refusing to delete a path outside the roots or through a link");
         return false;
     }
     match tokio::fs::remove_file(path).await {
         Ok(()) => true,
         Err(e) => {
-            tracing::warn!(%path, error = %e, "failed to delete partial file");
+            tracing::warn!(%path, error = %e, "failed to delete a file");
             false
         }
     }
 }
 
 /// Remove the directories between each deleted file and `dir` that are now
-/// empty, deepest first. `dir` itself is where the download was added, never
-/// something it made, and a directory with anything else left in it stays
-/// because `remove_dir` refuses it.
+/// empty, deepest first. `dir` is where the download was added and is never
+/// removed; `remove_dir` refusing a non-empty directory keeps anything with
+/// other contents. Nothing is removed for a `dir` that is not an absolute
+/// path, since every path starts with an empty one.
 pub(crate) async fn remove_emptied_dirs(
     state: &AppState,
     dir: &std::path::Path,
     deleted: &[std::path::PathBuf],
 ) {
+    if !dir.is_absolute() {
+        return;
+    }
     let mut dirs: Vec<_> = deleted
         .iter()
         .flat_map(|path| {
@@ -846,7 +852,7 @@ pub(crate) async fn remove_emptied_dirs(
     for d in dirs {
         if state
             .config
-            .resolve_existing(&d.to_string_lossy())
+            .resolve_unlinked(&d.to_string_lossy())
             .await
             .is_some()
         {
@@ -1273,7 +1279,8 @@ mod tests {
         let episode = root.join("Show/Season 1/ep01.mkv");
         let neighbour = root.join("Other/keep.mkv");
         let control = root.join("Show.aria2");
-        for f in [&episode, &neighbour, &control] {
+        let already_there = root.join("Show/Season 1/ep00.mkv");
+        for f in [&episode, &neighbour, &control, &already_there] {
             tokio::fs::create_dir_all(f.parent().unwrap())
                 .await
                 .unwrap();
@@ -1296,7 +1303,14 @@ mod tests {
         };
         let download = Download {
             dir: root.to_string_lossy().into_owned(),
-            files: vec![file(&episode), file(&root.join("Show/never-arrived.nfo"))],
+            files: vec![
+                file(&episode),
+                file(&root.join("Show/never-arrived.nfo")),
+                crate::aria2::File {
+                    selected: false,
+                    ..file(&already_there)
+                },
+            ],
             bittorrent_name: Some("Show".to_string()),
             ..Download::fixture()
         };
@@ -1304,8 +1318,14 @@ mod tests {
         delete_partial(&state, &download).await;
 
         assert!(
-            !root.join("Show").exists(),
-            "the torrent's own tree was left behind"
+            already_there.exists(),
+            "a deselected file already in the library was deleted"
+        );
+        assert!(!episode.exists(), "the torrent's own file was left behind");
+
+        assert!(
+            !control.exists(),
+            "the torrent\'s control file was left behind"
         );
         assert!(
             neighbour.exists(),
