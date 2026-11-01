@@ -137,8 +137,9 @@ jobs:
             # toolchain `check` runs; no other job reads it.
             touches '^src/|^templates/|^assets/|^build\.rs$|^Cargo\.(toml|lock)$|^mise\.toml$|^\.github/' || rust=false
             # The browser bundle, the stylesheet and the toolchain that builds
-            # them, plus everything they are generated from or lint covers.
-            touches '^web/|^styles/|^templates/|^assets/|^scripts/.*\.ts$|^deploy/pulumi/src/|^package\.json$|^aube-lock\.yaml$|^tsconfig\.web\.json$|^mise\.toml$|^\.github/' || web=false
+            # them, plus everything they are generated from (`src/` names
+            # classes too) or lint covers.
+            touches '^web/|^styles/|^templates/|^src/|^assets/|^scripts/.*\.ts$|^deploy/pulumi/src/|^package\.json$|^aube-lock\.yaml$|^tsconfig\.web\.json$|^mise\.toml$|^\.github/' || web=false
             touches '^deploy/pulumi/|^\.github/' || package=false
             # The static binaries and the image that copies them in. `check`
             # already checks the code, so a pull request builds these only
