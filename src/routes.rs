@@ -245,6 +245,7 @@ pub async fn stream(
     let mut viewer = state.poll.viewer();
     let s = async_stream::stream! {
         let mut sent: Option<Vec<(String, u64)>> = None;
+        let mut warned = false;
         let mut checked = std::time::Instant::now() - SESSION_RECHECK;
         // On its own timer rather than counted off the poller's ticks: what it
         // reports is that this connection is up, and a poller wedged on an
@@ -291,6 +292,20 @@ pub async fn stream(
             let Some(view) = &snapshot.view else {
                 continue;
             };
+
+            // Sent once per outage. Forgetting what was sent makes the first
+            // tick after it send the whole list, which is what retires the
+            // warning.
+            if view.unreachable {
+                if !warned {
+                    yield Ok::<_, Infallible>(patch_elements(&view.full));
+                    beat.reset();
+                    warned = true;
+                }
+                sent = None;
+                continue;
+            }
+            warned = false;
 
             let sent_anything = match unsent(&mut sent, &view.rows) {
                 Some(rows) => {

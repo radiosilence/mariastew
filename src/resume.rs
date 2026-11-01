@@ -46,7 +46,9 @@ pub fn spawn(state: AppState) {
     tokio::spawn(async move {
         let mut poll = state.poll.subscribe();
         while poll.changed().await.is_ok() {
-            let downloads = poll.borrow_and_update().downloads.clone();
+            let Some(downloads) = poll.borrow_and_update().downloads.clone() else {
+                continue;
+            };
             reconcile(&state, &downloads).await;
         }
     });
