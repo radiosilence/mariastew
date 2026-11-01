@@ -1448,12 +1448,7 @@ mod tests {
         assert!(!finished.contains("btn-error"));
 
         let unfinished = render(&moving());
-        assert!(
-            ["Cancel &amp; delete", "Cancel &#38; delete"]
-                .iter()
-                .any(|label| unfinished.contains(label)),
-            "{unfinished}"
-        );
+        assert!(unfinished.contains("Cancel &#38; delete"), "{unfinished}");
     }
 
     /// #354: every control that changes something on the server says the press
