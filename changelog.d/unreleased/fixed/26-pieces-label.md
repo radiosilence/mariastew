@@ -1,0 +1,1 @@
+- **The piece count reads once.** It said "pieces" twice.
