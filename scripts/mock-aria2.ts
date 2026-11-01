@@ -79,18 +79,14 @@ function fixtures(): Download[] {
       connections: "3",
     }),
     // Moving: the ordinary case, and the only row that advances below.
-    download(
-      "1000000000000002",
-      "Some.Show.S02E04.2160p.WEB-DL.DDP5.1.HDR.H.265-GROUP",
-      {
-        totalLength: n(6 * GiB),
-        completedLength: n(2 * GiB),
-        downloadSpeed: n(3.4 * 1024 * 1024),
-        uploadSpeed: n(180 * 1024),
-        connections: "24",
-        numSeeders: "11",
-      },
-    ),
+    download("1000000000000002", "Some.Show.S02E04.2160p.WEB-DL.DDP5.1.HDR.H.265-GROUP", {
+      totalLength: n(6 * GiB),
+      completedLength: n(2 * GiB),
+      downloadSpeed: n(3.4 * 1024 * 1024),
+      uploadSpeed: n(180 * 1024),
+      connections: "24",
+      numSeeders: "11",
+    }),
     // Stalled: peers connected, nothing arriving. May recover on its own,
     // which is why it is not an error.
     download(
@@ -105,15 +101,11 @@ function fixtures(): Download[] {
     ),
     // Can't connect: seeders exist and none is connected. Ordinary whenever
     // the peer port is not forwarded — see `upnp` in the README.
-    download(
-      "1000000000000004",
-      "Marrow.Ridge.1984.2160p.UHD.BluRay.x265-SOMEONE",
-      {
-        totalLength: n(14 * GiB),
-        completedLength: n(400 * 1024 * 1024),
-        numSeeders: "9",
-      },
-    ),
+    download("1000000000000004", "Marrow.Ridge.1984.2160p.UHD.BluRay.x265-SOMEONE", {
+      totalLength: n(14 * GiB),
+      completedLength: n(400 * 1024 * 1024),
+      numSeeders: "9",
+    }),
     // No seeders: nothing to wait for, and the only row whose fix is a
     // different magnet.
     download("1000000000000005", "Obscure.Thing.1971.DVDRip.XviD", {
@@ -127,17 +119,13 @@ function fixtures(): Download[] {
     }),
     // Ready: every wanted byte has arrived and it is still seeding, which is
     // what `--seed-ratio=0.0` means and why this stays in the active list.
-    download(
-      "1000000000000007",
-      "Quiet.Fault.1979.Criterion.1080p.BluRay.x264-CINEFILE",
-      {
-        totalLength: n(8 * GiB),
-        completedLength: n(8 * GiB),
-        uploadSpeed: n(620 * 1024),
-        connections: "31",
-        numSeeders: "0",
-      },
-    ),
+    download("1000000000000007", "Quiet.Fault.1979.Criterion.1080p.BluRay.x264-CINEFILE", {
+      totalLength: n(8 * GiB),
+      completedLength: n(8 * GiB),
+      uploadSpeed: n(620 * 1024),
+      connections: "31",
+      numSeeders: "0",
+    }),
     download("1000000000000008", "Broken.Release.2019.1080p.WEB-DL", {
       status: "error",
       totalLength: n(3 * GiB),
@@ -182,11 +170,7 @@ function advance() {
 
   // Metadata resolves and moves to stopped list, where it's swept.
   const resolving = downloads.find((d) => d.gid === RESOLVING);
-  if (
-    resolving &&
-    resolving.status !== "complete" &&
-    now - started >= RESOLVE_AFTER_MS
-  ) {
+  if (resolving && resolving.status !== "complete" && now - started >= RESOLVE_AFTER_MS) {
     resolving.status = "complete";
     resolving.followedBy = ["1000000000000010"];
     downloads.push(
@@ -226,8 +210,15 @@ function dispatch(method: string, params: unknown[]): unknown {
       return byStatus("active");
     case "aria2.tellWaiting":
       return byStatus("waiting", "paused");
-    case "aria2.tellStopped":
-      return byStatus("complete", "error", "removed");
+    // aria2's paging: a negative offset counts from the newest end and
+    // answers newest-first.
+    case "aria2.tellStopped": {
+      const stopped = byStatus("complete", "error", "removed");
+      const [offset, num] = params as [number, number];
+      if (offset >= 0) return stopped.slice(offset, offset + num);
+      const end = stopped.length + offset + 1;
+      return stopped.slice(Math.max(0, end - num), end).reverse();
+    }
     case "aria2.tellStatus": {
       const d = found();
       if (!d) throw new Error(`No such download: ${gid}`);
@@ -255,8 +246,7 @@ function dispatch(method: string, params: unknown[]): unknown {
     case "aria2.remove":
     case "aria2.forceRemove": {
       const d = found();
-      if (!d || isStopped(d))
-        throw new Error(`GID#${gid} cannot be removed now`);
+      if (!d || isStopped(d)) throw new Error(`GID#${gid} cannot be removed now`);
       d.status = "removed";
       return gid;
     }
@@ -285,6 +275,20 @@ function dispatch(method: string, params: unknown[]): unknown {
     }
     case "aria2.changeOption":
       return "OK";
+    // Every paused download here was paused by hand, so none is an unfinished add.
+    case "aria2.getOption":
+      return { "select-file": "1" };
+    case "system.multicall":
+      return (params[0] as { methodName: string; params: unknown[] }[]).map((call) => {
+        try {
+          return [dispatch(call.methodName, call.params)];
+        } catch (e) {
+          return {
+            faultCode: 1,
+            faultString: String(e instanceof Error ? e.message : e),
+          };
+        }
+      });
     default:
       throw new Error(`Unhandled method: ${method}`);
   }

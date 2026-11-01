@@ -6,8 +6,8 @@ A small Rust service in front of aria2. aria2 does the downloading and holds
 all the state — there is no database on this side, so a restart re-reads
 reality instead of reconciling with it, and a signed-in session lives only in
 memory, so a deploy signs everyone out. The frontend is server-rendered HTML
-patched over SSE ([Datastar](https://data-star.dev), vendored at
-`assets/datastar.js`), not a client-side app.
+patched over SSE ([Datastar](https://data-star.dev), vendored under
+`web/vendor/` and bundled with the app's own script), not a client-side app.
 
 Files land straight in the media library under a name you pick, so nothing has
 to be moved afterwards. Why it behaves as it does — the polling rates, what a
@@ -83,7 +83,7 @@ rather than by remembering to decorate it.
 
 ## Routes
 
-Everything below `/` requires a session; `/healthz`, the three `/assets/*`
+Everything below `/` requires a session; `/healthz`, the `/assets/*`
 files, and `/auth/*` are the only routes outside that layer (`src/main.rs`).
 
 | Route | Method | What |
@@ -128,8 +128,9 @@ job either passed or was skipped.
 Jobs skip when a change does not touch their domain. `changes` diffs a pull
 request against its base and a push against the last commit on main whose run
 passed, and sets one output per domain: `rust` (the crate, its templates and
-committed assets, `mise.toml`), `package` (`deploy/pulumi/`) and `docker` (the
-release binaries and the image). Markdown never counts; anything under
+committed assets, `mise.toml`), `web` (the TypeScript, the stylesheet source
+and the committed assets built from them), `package` (`deploy/pulumi/`) and
+`docker` (the release binaries and the image). Markdown never counts; anything under
 `.github/` counts for every domain; a manual run or a release runs everything.
 To add a domain, add an output and a `touches` allowlist to `changes`, gate the
 new job on it with `if:`, and add the job to the `needs` of `Checks`.

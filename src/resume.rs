@@ -27,15 +27,14 @@
 //!   boot has long since run.
 //!
 //! So this reconciles continuously, off the snapshots the poller already
-//! publishes. It costs one `getOption` per paused download per tick, and only
-//! paused ones — a queue that is running asks aria2 nothing extra.
+//! publishes. It costs one `getOption` per paused download, asked once while
+//! it stays paused — a queue that is running asks aria2 nothing extra.
 
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use crate::aria2::{Download, Status};
 use crate::routes::finish_add_inner;
-use crate::state::AppState;
+use crate::state::{AppState, Claim};
 
 /// Watches the poll for downloads with nobody finishing them.
 ///
@@ -46,57 +45,72 @@ use crate::state::AppState;
 pub fn spawn(state: AppState) {
     tokio::spawn(async move {
         let mut poll = state.poll.subscribe();
+        let mut selected = HashSet::new();
         let mut tried = HashSet::new();
         while poll.changed().await.is_ok() {
             let Some(downloads) = poll.borrow_and_update().downloads.clone() else {
                 continue;
             };
-            reconcile(&state, &downloads, &mut tried).await;
+            reconcile(&state, &downloads, &mut selected, &mut tried).await;
         }
     });
 }
 
-/// `tried` holds the downloads already adopted once by this process. An add
+/// `selected` holds the paused downloads already known to carry a selection.
+/// Nothing removes `select-file` once it is set, so each one is asked about
+/// once rather than on every tick for as long as it stays paused.
+///
+/// `tried` holds the downloads this process has already adopted once. An add
 /// that fails again is left paused, with its failure in the activity log,
 /// rather than retried at the poll rate for as long as the process runs.
-async fn reconcile(state: &AppState, downloads: &Arc<Vec<Download>>, tried: &mut HashSet<String>) {
-    if !tried.is_empty() {
+async fn reconcile(
+    state: &AppState,
+    downloads: &[Download],
+    selected: &mut HashSet<String>,
+    tried: &mut HashSet<String>,
+) {
+    if !selected.is_empty() || !tried.is_empty() {
         let live: HashSet<&str> = downloads.iter().map(|d| d.gid.as_str()).collect();
+        selected.retain(|gid| live.contains(gid.as_str()));
         tried.retain(|gid| live.contains(gid.as_str()));
     }
-    for d in downloads.iter() {
-        if d.status != Status::Paused || tried.contains(&d.gid) || state.adding.contains(&d.gid) {
+
+    for d in downloads {
+        if d.status != Status::Paused
+            || selected.contains(&d.gid)
+            || tried.contains(&d.gid)
+            || state.adding.contains(&d.gid)
+        {
             continue;
         }
         match state.aria2.has_selection(&d.gid).await {
             // Someone pressed pause. Theirs to undo.
-            Ok(true) => continue,
+            Ok(true) => {
+                selected.insert(d.gid.clone());
+                continue;
+            }
             Ok(false) => {}
             Err(e) => {
                 tracing::warn!(gid = %d.gid, error = %e, "resume: could not read the selection");
                 continue;
             }
         }
+        // Claimed before the task is spawned, so the next tick cannot adopt
+        // the same download a second time before the task has started.
+        let claim = state.adding.claim(&d.gid);
         tried.insert(d.gid.clone());
-        tokio::spawn(adopt(state.clone(), d.gid.clone(), d.dir.clone()));
+        tokio::spawn(adopt(state.clone(), claim, d.gid.clone(), d.dir.clone()));
     }
 }
 
 /// One unfinished add, carried the rest of the way.
 ///
-/// The claim is taken here rather than left to `finish_add_inner`, because the
-/// gap between spawning this and that function reaching its own claim is a gap
-/// the next tick can arrive in — and two tasks narrowing one download would
-/// race to release it.
-///
 /// A resolving magnet is released first, and failing that is fatal to this
 /// attempt: a paused magnet fetches no metadata, so there would be nothing for
 /// the finish below to wait for. A real download is left paused for the finish
-/// to narrow before it releases it. `sub` is the audit
-/// field on the "starting download" line, and nobody asked for this one — the
-/// restart did.
-async fn adopt(state: AppState, gid: String, dir: String) {
-    let claim = state.adding.claim(&gid);
+/// to narrow before it releases it. `sub` is the audit field on the "starting
+/// download" line, and nobody asked for this one; the restart did.
+async fn adopt(state: AppState, claim: Claim, gid: String, dir: String) {
     tracing::info!(%gid, %dir, "resume: finishing an add nobody was finishing");
     state
         .activity
@@ -104,7 +118,8 @@ async fn adopt(state: AppState, gid: String, dir: String) {
 
     // Only a resolving magnet is released here, since a paused one fetches no
     // metadata. A real download is narrowed first and released by
-    // `finish_add_inner`; releasing it here would start it with no selection.
+    // `finish_add_inner`, which also records what was on disk while it is
+    // still paused; releasing it here would start it with no selection.
     let released = match state.aria2.tell_status(&gid).await {
         Ok(d) if d.is_metadata() => state.aria2.unpause(&gid).await,
         Ok(_) => Ok(()),
@@ -165,6 +180,22 @@ mod tests {
             AxumState(mock): AxumState<Mock>,
             Json(body): Json<serde_json::Value>,
         ) -> Json<serde_json::Value> {
+            let result = match body["method"].as_str().unwrap_or_default() {
+                "system.multicall" => body["params"][0]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|call| serde_json::json!([answer(&mock, call)]))
+                    .collect(),
+                _ => answer(
+                    &mock,
+                    &serde_json::json!({"methodName": body["method"], "params": body["params"]}),
+                ),
+            };
+            Json(serde_json::json!({"jsonrpc": "2.0", "id": "mariastew", "result": result}))
+        }
+
+        fn answer(mock: &Mock, body: &serde_json::Value) -> serde_json::Value {
             let gid = body["params"][0].as_str().unwrap_or_default().to_string();
             // aria2 reports a released download as running, so the mock has to
             // as well: `finish_add_inner` reads the status back to decide
@@ -172,16 +203,13 @@ mod tests {
             // "paused" would let a double release through unnoticed.
             let released = |g: &str| mock.unpaused.lock().unwrap().iter().any(|u| u == g);
             let live = |g: &str| if released(g) { "active" } else { "paused" };
-            if body["method"] == "aria2.tellStatus" {
+            if body["methodName"] == "aria2.tellStatus" {
                 *mock.status_calls.lock().unwrap() += 1;
                 if mock.fails {
-                    let d = download("stranded-gid", "bogus", serde_json::json!([]));
-                    return Json(
-                        serde_json::json!({"jsonrpc": "2.0", "id": "mariastew", "result": d}),
-                    );
+                    return download("stranded-gid", "bogus", serde_json::json!([]));
                 }
             }
-            let result = match body["method"].as_str().unwrap_or_default() {
+            match body["methodName"].as_str().unwrap_or_default() {
                 "aria2.tellActive" | "aria2.tellStopped" => serde_json::json!([]),
                 "aria2.tellWaiting" => serde_json::json!([download(
                     "stranded-gid",
@@ -236,8 +264,7 @@ mod tests {
                     serde_json::json!("OK")
                 }
                 other => panic!("unexpected aria2 method in test: {other}"),
-            };
-            Json(serde_json::json!({"jsonrpc": "2.0", "id": "mariastew", "result": result}))
+            }
         }
 
         fn download(gid: &str, status: &str, files: serde_json::Value) -> serde_json::Value {
@@ -277,6 +304,7 @@ mod tests {
             activity: crate::activity::Activity::new(),
             clearing: crate::state::Clearing::default(),
             adding: crate::state::Adding::default(),
+            preexisting: Default::default(),
             http,
         }
     }

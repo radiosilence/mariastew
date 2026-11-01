@@ -110,6 +110,10 @@ worth keeping from *that* download's own file list — not the resolving gid's,
 which always has exactly one entry, itself — and `aria2.changeOption` applies
 the selection to it.
 
+The resolving gid's own result is discarded once the real download exists.
+aria2 keeps every stopped result until told otherwise, and these would
+otherwise accumulate one per add in the list the poller reads.
+
 `--pause-metadata` is what makes that safe. aria2 creates the followed download
 already stopped, with its full file list readable, so the selection is in place
 before a single content byte arrives — measured against a real swarm, nothing
@@ -133,18 +137,45 @@ below's problem.
 aria2 also downloads whole pieces regardless of selection, so a small
 deselected file sharing a piece boundary with a selected one can land anyway
 even once selection is correct. `notify::sweep_garbage` runs from the same
-completion watch that sends the Telegram message, and walks the download's own
-tree — the entries the torrent put directly under `dir`, never `dir` itself,
-which is a library root — deleting whatever `filter::is_garbage` flags and the
-directories that leaves empty.
+completion watch that sends the Telegram message and deletes whichever of the
+download's own files `filter::is_garbage` flags, selected or not, along with
+the directories that leaves empty below `dir`.
 
-It judges the disk rather than aria2's selection because selection is not the
-only thing that lets garbage through: a download aria2 already knew about when
-the service started never had one applied, so every file reads as selected, and
-a `.DS_Store` some other machine wrote is in no torrent's manifest at all. The
-sweep also runs once over everything already finished at startup, since a
-download that completed while the pod was down never had one. It is idempotent,
-so the ones that did cost a directory walk that finds nothing.
+It judges aria2's file list rather than the disk, and within it only paths
+aria2 holds bytes for that were not there before the download started (see
+the next section). A download aria2 already knew about when the service
+started never had a selection applied, so every file reads as selected, but
+its garbage is still in that list. What is not in it is not the torrent's: a
+release added into a folder that already holds artwork or metadata of its own
+leaves those files alone, and so does a listed path aria2 never wrote, which
+may hold a media server's artwork by now. The sweep also runs once over
+everything already finished at startup, since a download that completed while
+the pod was down never had one; it is idempotent.
+
+## What deletion is allowed to touch
+
+Two things delete from the library: the sweep above, and cancelling an
+unfinished download. Both go through `routes::remove_contained`, which unlinks
+only a regular file inside a root, reached through no symlink below the root
+(`Config::resolve_unlinked`). A linked directory inside a root still lands
+somewhere else in the library, and a delete named for one release would act on
+another's folder.
+
+aria2 runs with `--check-integrity`, so a file already at a path a torrent
+lists is hash-checked when the download starts and counted as complete,
+exactly like one it fetched. Re-adding a season pack into the folder that
+holds some of its episodes is the ordinary case, and nothing aria2 reports
+afterwards tells those episodes apart from the new ones. The difference is
+only visible before the download starts, so `finish_add_inner` records which
+listed paths already exist while aria2 holds the download paused
+(`--pause-metadata`), before it has opened anything (`state::Preexisting`).
+Neither cancel nor the sweep touches a recorded path.
+
+The record lives in memory, like the activity log. For a download added before
+the pod last started there is none, and cancel falls back to deleting only
+selected files aria2 has not completed: a complete one may be a pre-existing
+file it verified. That leaves some partial junk behind in exchange for never
+deleting a finished episode nobody can prove the torrent wrote.
 
 `clean-dls` in the dotfiles — the script `filter.rs` is ported from — ends by
 handing the tree to `prune`, which deletes any directory under a size
@@ -290,8 +321,8 @@ a disk read rather than a negotiation — restoring with the network unplugged
 loads the metadata and finishes verification in two seconds. aria2 names the
 file `<infohash>.torrent` and puts it beside the data, with no option to put it
 elsewhere, so ~60KB per torrent sits in the library next to what it describes.
-`notify::sweep_garbage` walks a download's own entries and never a sibling, so
-it survives to be read.
+It is not in the torrent's file list, so `notify::sweep_garbage` never
+considers it, and it survives to be read.
 
 Anything added before this existed has no saved torrent and falls back to the
 swarm, which is the old behaviour rather than a new failure.
@@ -339,8 +370,8 @@ file called `[METADATA]<dn>`, a real download has the torrent's own name and
 its real file list.
 
 Nothing the interface cleared comes back. `routes::clear` follows `remove` with
-`removeDownloadResult` and keeps asking until the gid is gone from every list
-aria2 keeps, and a result aria2 no longer holds is not one it can save — which
+`removeDownloadResult` and keeps asking until aria2 answers that it holds no
+such gid, and a result aria2 no longer holds is not one it can save — which
 is the property `--force-save` would otherwise put at risk.
 
 `--check-integrity=true` still applies on the way back in, so a restored
@@ -467,8 +498,9 @@ receiving and starts only uploading. That is why the UI tracks "finished" as
 a property of a still-active row (`Download::is_finished` in `src/aria2.rs`)
 rather than a separate list, and why the remove button means two different
 things depending on that property (`routes::remove`): on an unfinished
-download it deletes the partial files along with the aria2 entry — a
-half-downloaded episode sitting in the library is the mess this avoids — and
+download it deletes what the torrent wrote along with the aria2 entry — a
+half-downloaded episode sitting in the library is the mess this avoids, and
+what it may not delete is the previous section's subject — and
 on a finished one it only stops seeding, leaving the files in place: that is
 stopping an upload, not undoing a download, and deleting the episode would be
 astonishing. The finished button says **Done** rather than "stop seeding" —
@@ -484,9 +516,9 @@ refused for a moment after the first succeeds. Starting with `remove` and
 giving up when it failed is what made the button look dead: an errored row and
 a torrent aria2 had stopped seeding are both already-stopped, so the call that
 would have worked was never reached, and the row stayed with a button that
-could only fail again. `routes::clear` now runs both in the order that applies
-and keeps asking until the gid is gone from the lists the page reads — the
-same question the row is asking — rather than trusting either call's return.
+could only fail again. `routes::clear` runs both in the order that applies and
+keeps asking until aria2 answers `tellStatus` for the gid with "not found",
+rather than trusting either call's return.
 
 That takes long enough to need saying so. The gid goes into `state::Clearing`
 before the request answers, which renders the row as "clearing" with its

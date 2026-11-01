@@ -1,0 +1,1 @@
+- **aria2's stopped list no longer grows with every add.** The resolved magnet's own result is discarded once the real download exists.

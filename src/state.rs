@@ -1,7 +1,8 @@
 //! Shared state, cloned into every handler. Every field is cheap to clone —
 //! an `Arc`, a `reqwest::Client`, or a map behind one.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use crate::activity::Activity;
@@ -97,6 +98,60 @@ impl Drop for Claim {
     }
 }
 
+/// Downloads whose record is kept at once, oldest dropped first.
+const MAX_PREEXISTING: usize = 200;
+
+/// For each download, which of its listed files were already on disk before
+/// aria2 opened any of them.
+///
+/// aria2 runs with `--check-integrity`, so a file already in the library at a
+/// path a torrent lists is verified and counted as complete, exactly like one
+/// it downloaded. Re-adding a season pack into the folder that holds some of
+/// its episodes is the ordinary case, and nothing aria2 reports afterwards
+/// tells those episodes apart from the ones it fetched. The difference is only
+/// visible before the download starts, which is when `finish_add_inner` looks.
+/// Cancelling and the garbage sweep leave these files alone.
+///
+/// Lost on restart, like the activity log: a download added before it has no
+/// record, and `known` says so.
+#[derive(Clone, Default)]
+pub struct Preexisting(Arc<Mutex<PreexistingInner>>);
+
+#[derive(Default)]
+struct PreexistingInner {
+    files: HashMap<String, HashSet<PathBuf>>,
+    order: VecDeque<String>,
+}
+
+impl Preexisting {
+    fn lock(&self) -> std::sync::MutexGuard<'_, PreexistingInner> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub fn record(&self, gid: &str, files: HashSet<PathBuf>) {
+        let mut inner = self.lock();
+        if inner.files.insert(gid.to_string(), files).is_none() {
+            inner.order.push_back(gid.to_string());
+            if inner.order.len() > MAX_PREEXISTING
+                && let Some(oldest) = inner.order.pop_front()
+            {
+                inner.files.remove(&oldest);
+            }
+        }
+    }
+
+    /// `None` when nothing was recorded for this download.
+    pub fn known(&self, gid: &str) -> Option<HashSet<PathBuf>> {
+        self.lock().files.get(gid).cloned()
+    }
+
+    pub fn forget(&self, gid: &str) {
+        let mut inner = self.lock();
+        inner.files.remove(gid);
+        inner.order.retain(|g| g != gid);
+    }
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<Config>,
@@ -112,6 +167,9 @@ pub struct AppState {
     pub clearing: Clearing,
     /// Adds in flight — see [`Adding`].
     pub adding: Adding,
+    /// Files already on disk before each download started — see
+    /// [`Preexisting`].
+    pub preexisting: Preexisting,
     /// Hydra and Telegram. One client, so the connection pool and the TLS
     /// session cache are shared.
     pub http: reqwest::Client,

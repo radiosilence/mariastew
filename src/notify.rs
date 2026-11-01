@@ -15,11 +15,12 @@
 //! command firing at deploy time when a hash changes, which is the wrong shape
 //! for a runtime event.
 
-use std::collections::{BTreeSet, HashMap};
-use std::path::{Component, Path, PathBuf};
+use std::collections::HashMap;
+use std::path::Path;
 
 use crate::aria2::{Download, Health, Status};
 use crate::filter;
+use crate::routes;
 use crate::state::AppState;
 use crate::views;
 
@@ -67,10 +68,11 @@ pub fn spawn_watcher(state: AppState) {
                     // Announcing these again would be the one behaviour worth
                     // muting; sweeping them again is not. A download that
                     // finished while this process was not running never had a
-                    // sweep at all, and the sweep is a directory walk that
-                    // finds nothing on the ones that did.
+                    // sweep at all, and on the ones that did it finds nothing
+                    // left to delete.
                     if terminal && d.status != Status::Error {
                         sweep_garbage(&state, d).await;
+                        state.preexisting.forget(&d.gid);
                     }
                     seen.insert(
                         d.gid.clone(),
@@ -106,6 +108,7 @@ pub fn spawn_watcher(state: AppState) {
                         failed(&state, d.display_name(), error).await;
                     } else {
                         sweep_garbage(&state, d).await;
+                        state.preexisting.forget(&d.gid);
                         state
                             .activity
                             .record(&d.gid, format!("finished — {}", d.dir));
@@ -129,130 +132,46 @@ pub fn spawn_watcher(state: AppState) {
     });
 }
 
-/// What a finished download left on disk that `clean-dls` would still find.
+/// Delete the garbage a finished download brought with it.
 ///
 /// aria2 downloads whole pieces regardless of `select-file`, so a small
-/// deselected file sharing a piece boundary with a selected one still reaches
-/// disk — `#260` anticipated exactly this and left it as a line of code
-/// rather than a design change. `--file-allocation=none` (see the README)
-/// prevents preallocation, not this.
-///
-/// Deselection is not the only way garbage lands, though, which is why this
-/// judges the tree rather than aria2's file list. A download aria2 already
-/// knew about when this process started — the pod died mid-`add`, or someone
-/// put it there directly — never had a selection applied to it, so every one
-/// of its files is `selected` and reading `selected` would clear none of it.
-/// The script walked what was on disk; so does this.
-///
-/// Scoped to the torrent's own top-level entries under `dir`, never `dir`
-/// itself, which is a library root: one download completing is not a reason
-/// to put the whole library behind this filter's judgement. Symlinks are read
-/// rather than followed, and every path still goes through `resolve_existing`
-/// immediately before the delete, the same containment check
-/// `routes::delete_partial` uses.
-///
-/// `clean-dls` finished by handing the tree to `prune`, which deletes any
-/// directory under a size threshold. That is a decision for someone watching
-/// it happen rather than for a service, so only the directories this sweep
-/// itself emptied — a `Sample/` holding nothing else — go.
+/// deselected file sharing a piece with a selected one still reaches the
+/// disk; and a download adopted after a restart may have had no selection
+/// applied at all. Both are in aria2's file list for the download, which is
+/// what this judges: only paths the torrent itself listed are candidates, so
+/// a release added into a folder that already held artwork or metadata of its
+/// own leaves those alone. Symlinks are never removed, every path goes through
+/// `resolve_existing` immediately before the delete, and only directories this
+/// emptied, below the destination, go with it.
 async fn sweep_garbage(state: &AppState, d: &Download) {
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    let mut pending: Vec<PathBuf> = Vec::new();
-
-    for entry in top_level_entries(d) {
-        // Checked once here rather than per file: nothing below a contained
-        // directory can leave it without a symlink, and the walk does not
-        // follow those. It is also what keeps the empty-directory pass from
-        // ever calling `remove_dir` outside a root.
-        if state
-            .config
-            .resolve_existing(&entry.to_string_lossy())
-            .await
-            .is_none()
-        {
-            tracing::warn!(
-                path = %entry.display(),
-                "refusing to sweep a finished download outside every root"
-            );
-            continue;
-        }
-        match tokio::fs::symlink_metadata(&entry).await {
-            Ok(m) if m.is_dir() => {
-                dirs.push(entry.clone());
-                pending.push(entry);
-            }
-            Ok(m) if m.is_file() => remove_if_garbage(state, d, &entry).await,
-            _ => {}
-        }
-    }
-
-    while let Some(dir) = pending.pop() {
-        let Ok(mut entries) = tokio::fs::read_dir(&dir).await else {
-            continue;
-        };
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let path = entry.path();
-            match tokio::fs::symlink_metadata(&path).await {
-                Ok(m) if m.is_dir() => {
-                    dirs.push(path.clone());
-                    pending.push(path);
-                }
-                Ok(m) if m.is_file() => remove_if_garbage(state, d, &path).await,
-                _ => {}
-            }
-        }
-    }
-
-    // A directory is always pushed before its children, so reversing visits
-    // the deepest first and a directory holding nothing but empty
-    // directories still goes. `remove_dir` refusing a non-empty one is the
-    // emptiness check — there is nothing to ask first.
-    for dir in dirs.into_iter().rev() {
-        let _ = tokio::fs::remove_dir(dir).await;
-    }
-}
-
-/// The torrent's own entries directly under `dir` — the widest thing that is
-/// still this download rather than the library around it. A multi-file
-/// torrent contributes its one release directory; a single-file one
-/// contributes the file, and neither reaches a sibling.
-fn top_level_entries(d: &Download) -> Vec<PathBuf> {
     let dir = Path::new(&d.dir);
-    let mut entries = BTreeSet::new();
+    let existing = state.preexisting.known(&d.gid).unwrap_or_default();
+    let mut deleted = Vec::new();
     for f in &d.files {
-        let Ok(rel) = Path::new(&f.path).strip_prefix(dir) else {
+        let path = Path::new(&f.path);
+        if existing.contains(path) {
             continue;
-        };
-        // Anything that is not a plain name — a `..`, a second root — is a
-        // path this has no business deriving a sweep scope from.
-        if let Some(Component::Normal(first)) = rel.components().next() {
-            entries.insert(dir.join(first));
         }
+        // A listed path aria2 holds no bytes for may hold something else by
+        // now, such as artwork a media server put there.
+        if !filter::is_garbage(&f.path)
+            || f.completed_length == 0
+            || !path.starts_with(dir)
+            || path == dir
+            || !routes::remove_contained(state, &f.path).await
+        {
+            continue;
+        }
+        let _ = tokio::fs::remove_file(format!("{}.aria2", f.path)).await;
+        tracing::info!(gid = %d.gid, path = %f.path, "removed garbage from a finished download");
+        // The only thing that deletes from the library without anyone asking,
+        // so it says so where the download's history is read.
+        state
+            .activity
+            .record(&d.gid, format!("deleted junk — {}", f.path));
+        deleted.push(path.to_path_buf());
     }
-    entries.into_iter().collect()
-}
-
-async fn remove_if_garbage(state: &AppState, d: &Download, path: &Path) {
-    let path = path.to_string_lossy();
-    if !filter::is_garbage(&path) {
-        return;
-    }
-    if state.config.resolve_existing(&path).await.is_none() {
-        tracing::warn!(%path, "refusing to delete a garbage file outside any root");
-        return;
-    }
-    if let Err(e) = tokio::fs::remove_file(path.as_ref()).await {
-        tracing::warn!(%path, error = %e, "failed to delete garbage file");
-        return;
-    }
-    tracing::info!(gid = %d.gid, %path, "removed garbage from a finished download");
-    // A file that appears in the destination and then disappears is otherwise
-    // unexplained — this is the only thing that deletes from the library
-    // without anyone asking it to.
-    state
-        .activity
-        .record(&d.gid, format!("deleted junk — {path}"));
-    let _ = tokio::fs::remove_file(format!("{path}.aria2")).await;
+    routes::remove_emptied_dirs(state, dir, &deleted).await;
 }
 
 /// Escape for Telegram HTML. `&` first to avoid double-escaping entities.
@@ -337,6 +256,7 @@ mod tests {
             poll: crate::poll::Poll::new(),
             clearing: crate::state::Clearing::default(),
             adding: Default::default(),
+            preexisting: Default::default(),
             http: reqwest::Client::new(),
         }
     }
@@ -442,14 +362,13 @@ mod tests {
         let _ = tokio::fs::remove_dir_all(&root).await;
     }
 
-    /// Parity with `clean-dls`, and the reason this walks the tree rather
-    /// than aria2's file list: a download nothing here applied a selection to
-    /// reports every file as selected, and one that landed outside the
-    /// torrent's manifest entirely (`.DS_Store`, written by whatever browsed
-    /// the share) is not in that list at all. The script judged what was on
-    /// disk, so this does too.
+    /// A download adopted after a restart had no selection applied, so its
+    /// garbage is still `selected`; what the torrent listed is what counts.
+    /// A file it never listed is not its to judge, however it is named — a
+    /// release added into an existing folder must leave that folder's own
+    /// artwork alone.
     #[tokio::test]
-    async fn sweep_garbage_removes_garbage_no_selection_ever_covered() {
+    async fn sweep_garbage_judges_what_the_torrent_listed_and_nothing_else() {
         let root = temp_root("unselected-tree").await;
         let release = root.join("Some.Release");
         let movie = release.join("movie.mkv");
@@ -473,8 +392,8 @@ mod tests {
         assert!(movie.exists());
         assert!(!nfo.exists(), "selection is not what makes a file garbage");
         assert!(
-            !ds_store.exists(),
-            "a garbage file aria2 never listed must still go"
+            ds_store.exists(),
+            "a file the torrent never listed is not the sweep's to delete"
         );
 
         let _ = tokio::fs::remove_dir_all(&root).await;
@@ -495,7 +414,15 @@ mod tests {
             touch(f).await;
         }
 
-        let d = download(&root, vec![file(1, movie.to_str().unwrap(), true)]);
+        let d = download(
+            &root,
+            vec![
+                file(1, movie.to_str().unwrap(), true),
+                file(2, sample.to_str().unwrap(), false),
+                file(3, subs.to_str().unwrap(), true),
+                file(4, art.to_str().unwrap(), false),
+            ],
+        );
         sweep_garbage(&state(root.clone()), &d).await;
 
         assert!(!sample.exists());
@@ -537,6 +464,70 @@ mod tests {
     /// Links are read, never followed. A link is not a file this download
     /// wrote, and resolving one would let a name inside the tree decide what
     /// gets unlinked outside it.
+    /// A file that was in the library before the download started is not the
+    /// download's to sweep, whatever it is called.
+    #[tokio::test]
+    async fn sweep_garbage_leaves_a_file_that_was_there_first() {
+        let root = temp_root("preexisting").await;
+        let poster = root.join("Show/poster.jpg");
+        touch(&poster).await;
+        let state = state(root.clone());
+        let d = download(&root, vec![file(1, poster.to_str().unwrap(), true)]);
+        state
+            .preexisting
+            .record(&d.gid, std::collections::HashSet::from([poster.clone()]));
+
+        sweep_garbage(&state, &d).await;
+
+        assert!(
+            poster.exists(),
+            "a file that predates the download was swept"
+        );
+        let _ = tokio::fs::remove_dir_all(&root).await;
+    }
+
+    /// A directory link inside a root still reaches somewhere else in the
+    /// library, and the file there is not this download's.
+    #[tokio::test]
+    async fn sweep_garbage_does_not_delete_through_a_linked_directory() {
+        let root = temp_root("dir-symlink").await;
+        let elsewhere = root.join("Another.Release");
+        let poster = elsewhere.join("poster.jpg");
+        touch(&poster).await;
+        std::os::unix::fs::symlink(&elsewhere, root.join("Some.Release")).unwrap();
+
+        let through_link = root.join("Some.Release/poster.jpg");
+        let d = download(&root, vec![file(1, through_link.to_str().unwrap(), false)]);
+        sweep_garbage(&state(root.clone()), &d).await;
+
+        assert!(
+            poster.exists(),
+            "a file reached through a linked directory was deleted"
+        );
+        let _ = tokio::fs::remove_dir_all(&root).await;
+    }
+
+    /// A path the torrent lists but aria2 never wrote may hold something else
+    /// by now, such as artwork a media server put there.
+    #[tokio::test]
+    async fn sweep_garbage_leaves_a_listed_path_aria2_never_wrote() {
+        let root = temp_root("unwritten").await;
+        let poster = root.join("Some.Release/poster.jpg");
+        touch(&poster).await;
+
+        let d = download(
+            &root,
+            vec![File {
+                completed_length: 0,
+                ..file(1, poster.to_str().unwrap(), false)
+            }],
+        );
+        sweep_garbage(&state(root.clone()), &d).await;
+
+        assert!(poster.exists(), "a file aria2 never wrote to was deleted");
+        let _ = tokio::fs::remove_dir_all(&root).await;
+    }
+
     #[tokio::test]
     async fn sweep_garbage_does_not_follow_a_symlink_out_of_the_tree() {
         let root = temp_root("symlink").await;
@@ -548,7 +539,13 @@ mod tests {
         let link = release.join("cover.jpg");
         std::os::unix::fs::symlink(&target, &link).unwrap();
 
-        let d = download(&root, vec![file(1, movie.to_str().unwrap(), true)]);
+        let d = download(
+            &root,
+            vec![
+                file(1, movie.to_str().unwrap(), true),
+                file(2, link.to_str().unwrap(), false),
+            ],
+        );
         sweep_garbage(&state(root.clone()), &d).await;
 
         assert!(target.exists(), "a symlink's target must never be unlinked");

@@ -1,0 +1,1 @@
+- **Cancelling never deletes what was in the library first.** Files already at a torrent's paths before it started are recorded and kept; only what the torrent wrote goes, with its control file and the folders it leaves empty.

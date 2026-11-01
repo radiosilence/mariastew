@@ -203,9 +203,7 @@ export function createMariastew(
                   },
                   {
                     name: "ROOTS",
-                    value: conf.roots
-                      .map((r) => `${r.name}:${r.hostPath}`)
-                      .join(","),
+                    value: conf.roots.map((r) => `${r.name}:${r.hostPath}`).join(","),
                   },
                   { name: "PUBLIC_URL", value: `https://${opts.hostname}` },
                   { name: "OIDC_ISSUER", value: opts.oidc.issuer },

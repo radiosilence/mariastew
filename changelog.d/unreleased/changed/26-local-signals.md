@@ -1,0 +1,1 @@
+- **Requests no longer carry the page's local state.** Datastar signals are prefixed so they stay in the browser, which keeps the stream's reconnect URL from growing with every row shown.
