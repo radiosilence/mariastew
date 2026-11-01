@@ -637,6 +637,7 @@ pub(crate) async fn finish_add_inner(
     // anything is fetched.
     let child = state.aria2.tell_status(&child_gid).await?;
     let paused = child.status == Status::Paused;
+    let name = child.display_name().to_string();
     let files = child.files;
 
     // A download handed over running may have written its own files already,
@@ -657,8 +658,22 @@ pub(crate) async fn finish_add_inner(
         .map(|f| f.index.to_string())
         .collect();
     if indices.is_empty() {
+        // Left in place it would be paused with no selection, which `resume`
+        // adopts as an interrupted add.
+        if let Err(e) = state.aria2.remove(&child_gid).await {
+            tracing::warn!(gid = %child_gid, error = %e, "add: could not remove an all-garbage torrent");
+        }
+        let _ = state.aria2.remove_download_result(&child_gid).await;
+        // No row is left to carry the reason, so it is announced like any
+        // other failed download.
+        crate::notify::failed(
+            state,
+            &name,
+            "every file is garbage, so it was not downloaded",
+        )
+        .await;
         return Err(AppError::BadRequest(
-            "every file in this torrent is garbage".to_string(),
+            "every file in this torrent is garbage, so it was removed".to_string(),
         ));
     }
 
@@ -1649,7 +1664,9 @@ mod tests {
                     mock.change_option_calls.lock().unwrap().push(body.clone());
                     serde_json::json!({"result": "OK"})
                 }
-                "aria2.removeDownloadResult" => serde_json::json!({"result": "OK"}),
+                "aria2.forceRemove" | "aria2.removeDownloadResult" => {
+                    serde_json::json!({"result": "OK"})
+                }
                 other => panic!("unexpected aria2 method in test: {other}"),
             };
             let mut envelope = serde_json::json!({"jsonrpc": "2.0", "id": "mariastew"});
@@ -1971,6 +1988,46 @@ mod tests {
                     .count(),
                 3,
                 "the add gave up on its own pause"
+            );
+        }
+
+        /// An all-garbage torrent cannot be narrowed to anything. Left paused
+        /// with no selection, `resume` would adopt it as an interrupted add, so
+        /// it is removed instead.
+        #[tokio::test]
+        async fn an_all_garbage_torrent_is_removed_rather_than_left_to_be_adopted() {
+            let child_files = serde_json::json!([
+                {"index": "1", "path": "/mnt/kontent/movies/PACKGRP.nfo", "length": "473", "selected": "true"},
+                {"index": "2", "path": "/mnt/kontent/movies/cover.jpg", "length": "900", "selected": "true"},
+            ]);
+            let mock = mock_server(
+                serde_json::json!({"result": "metadata-gid"}),
+                MetadataOutcome::ResolvesWithChild {
+                    child_gid: "child-gid".to_string(),
+                    child_files,
+                },
+            )
+            .await;
+            let state = test_state(mock.url);
+
+            add(
+                State(state),
+                CurrentSession(session()),
+                MultiForm(add_form()),
+            )
+            .await;
+
+            wait_for_calls(&mock.calls, 6).await;
+            let calls = mock.calls.lock().unwrap();
+            assert!(
+                calls.iter().any(|m| m == "aria2.forceRemove"),
+                "the torrent was left for resume to adopt: {calls:?}"
+            );
+            assert!(
+                !calls
+                    .iter()
+                    .any(|m| m == "aria2.changeOption" || m == "aria2.unpause"),
+                "an all-garbage torrent was narrowed or released: {calls:?}"
             );
         }
 

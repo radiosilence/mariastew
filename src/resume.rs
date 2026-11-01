@@ -46,11 +46,12 @@ pub fn spawn(state: AppState) {
     tokio::spawn(async move {
         let mut poll = state.poll.subscribe();
         let mut selected = HashSet::new();
+        let mut tried = HashSet::new();
         while poll.changed().await.is_ok() {
             let Some(downloads) = poll.borrow_and_update().downloads.clone() else {
                 continue;
             };
-            reconcile(&state, &downloads, &mut selected).await;
+            reconcile(&state, &downloads, &mut selected, &mut tried).await;
         }
     });
 }
@@ -58,14 +59,27 @@ pub fn spawn(state: AppState) {
 /// `selected` holds the paused downloads already known to carry a selection.
 /// Nothing removes `select-file` once it is set, so each one is asked about
 /// once rather than on every tick for as long as it stays paused.
-async fn reconcile(state: &AppState, downloads: &[Download], selected: &mut HashSet<String>) {
-    if !selected.is_empty() {
+///
+/// `tried` holds the downloads this process has already adopted once. An add
+/// that fails again is left paused, with its failure in the activity log,
+/// rather than retried at the poll rate for as long as the process runs.
+async fn reconcile(
+    state: &AppState,
+    downloads: &[Download],
+    selected: &mut HashSet<String>,
+    tried: &mut HashSet<String>,
+) {
+    if !selected.is_empty() || !tried.is_empty() {
         let live: HashSet<&str> = downloads.iter().map(|d| d.gid.as_str()).collect();
         selected.retain(|gid| live.contains(gid.as_str()));
+        tried.retain(|gid| live.contains(gid.as_str()));
     }
 
     for d in downloads {
-        if d.status != Status::Paused || selected.contains(&d.gid) || state.adding.contains(&d.gid)
+        if d.status != Status::Paused
+            || selected.contains(&d.gid)
+            || tried.contains(&d.gid)
+            || state.adding.contains(&d.gid)
         {
             continue;
         }
@@ -84,32 +98,34 @@ async fn reconcile(state: &AppState, downloads: &[Download], selected: &mut Hash
         // Claimed before the task is spawned, so the next tick cannot adopt
         // the same download a second time before the task has started.
         let claim = state.adding.claim(&d.gid);
+        tried.insert(d.gid.clone());
         tokio::spawn(adopt(state.clone(), claim, d.gid.clone(), d.dir.clone()));
     }
 }
 
 /// One unfinished add, carried the rest of the way.
 ///
-/// The release comes first and is fatal to this attempt if it fails: a paused
-/// magnet fetches no metadata, so there would be nothing for the finish below
-/// to wait for and it would spend ten minutes proving it. `sub` is the audit
-/// field on the "starting download" line, and nobody asked for this one — the
-/// restart did.
+/// A resolving magnet is released first, and failing that is fatal to this
+/// attempt: a paused magnet fetches no metadata, so there would be nothing for
+/// the finish below to wait for. A real download is left paused for the finish
+/// to narrow before it releases it. `sub` is the audit field on the "starting
+/// download" line, and nobody asked for this one; the restart did.
 async fn adopt(state: AppState, claim: Claim, gid: String, dir: String) {
     tracing::info!(%gid, %dir, "resume: finishing an add nobody was finishing");
     state
         .activity
         .record(&gid, "picked up again after a restart");
 
-    // Still paused, so nothing has been opened yet. A resolving magnet lists
-    // no real files; its child is recorded when it is followed.
-    if let Ok(d) = state.aria2.tell_status(&gid).await
-        && !d.is_metadata()
-    {
-        crate::routes::record_preexisting(&state, &gid, &d.files).await;
-    }
-
-    if let Err(e) = state.aria2.unpause(&gid).await {
+    // Only a resolving magnet is released here, since a paused one fetches no
+    // metadata. A real download is narrowed first and released by
+    // `finish_add_inner`, which also records what was on disk while it is
+    // still paused; releasing it here would start it with no selection.
+    let released = match state.aria2.tell_status(&gid).await {
+        Ok(d) if d.is_metadata() => state.aria2.unpause(&gid).await,
+        Ok(_) => Ok(()),
+        Err(e) => Err(e),
+    };
+    if let Err(e) = released {
         tracing::error!(%gid, error = %e, "resume: could not release a stalled add");
         state.activity.record(&gid, format!("failed — {e}"));
         return;
@@ -149,6 +165,10 @@ mod tests {
         /// Whether the adopted gid still has a metadata pass to be followed to
         /// its download, or *is* that download already — see `routes::follow`.
         resolves_to_child: bool,
+        /// Answers `tellStatus` with a status aria2 never sends, so every
+        /// adoption fails.
+        fails: bool,
+        status_calls: Arc<Mutex<u32>>,
     }
 
     /// A download paused with no selection, exactly as a restart leaves one.
@@ -183,6 +203,12 @@ mod tests {
             // "paused" would let a double release through unnoticed.
             let released = |g: &str| mock.unpaused.lock().unwrap().iter().any(|u| u == g);
             let live = |g: &str| if released(g) { "active" } else { "paused" };
+            if body["methodName"] == "aria2.tellStatus" {
+                *mock.status_calls.lock().unwrap() += 1;
+                if mock.fails {
+                    return download("stranded-gid", "bogus", serde_json::json!([]));
+                }
+            }
             match body["methodName"].as_str().unwrap_or_default() {
                 "aria2.tellActive" | "aria2.tellStopped" => serde_json::json!([]),
                 "aria2.tellWaiting" => serde_json::json!([download(
@@ -206,7 +232,11 @@ mod tests {
                     ]),
                 ),
                 "aria2.tellStatus" if mock.resolves_to_child => {
-                    let mut d = download("stranded-gid", "active", serde_json::json!([]));
+                    let mut d = download(
+                        "stranded-gid",
+                        "active",
+                        serde_json::json!([{"index": "1", "path": "[METADATA]Show.S01", "length": "0", "selected": "true"}]),
+                    );
                     d["followedBy"] = serde_json::json!(["child-gid"]);
                     d
                 }
@@ -227,6 +257,7 @@ mod tests {
                 }
                 "aria2.pause" => panic!("the add must not pause anything itself any more"),
                 "aria2.changeOption" => {
+                    assert!(!released(&gid), "{gid} was released before it was narrowed");
                     if let Some(files) = body["params"][1]["select-file"].as_str() {
                         mock.selected.lock().unwrap().push(files.to_string());
                     }
@@ -302,6 +333,8 @@ mod tests {
             selected: Arc::new(Mutex::new(Vec::new())),
             has_selection: false,
             resolves_to_child: true,
+            fails: false,
+            status_calls: Default::default(),
         };
         let state = state_for(mock_aria2(mock.clone()).await);
 
@@ -325,6 +358,32 @@ mod tests {
         );
     }
 
+    /// An adoption that fails is not retried by the same process: it would
+    /// fail the same way at the poll rate for as long as the process ran.
+    #[tokio::test]
+    async fn an_add_that_fails_again_is_adopted_once() {
+        let mock = Mock {
+            unpaused: Arc::new(Mutex::new(Vec::new())),
+            selected: Arc::new(Mutex::new(Vec::new())),
+            has_selection: false,
+            resolves_to_child: false,
+            fails: true,
+            status_calls: Default::default(),
+        };
+        let state = state_for(mock_aria2(mock.clone()).await);
+        crate::poll::spawn(state.clone());
+        spawn(state.clone());
+
+        assert!(settle(|| *mock.status_calls.lock().unwrap() >= 1).await);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert_eq!(
+            *mock.status_calls.lock().unwrap(),
+            1,
+            "a failed adoption was retried"
+        );
+        assert!(mock.unpaused.lock().unwrap().is_empty());
+    }
+
     /// The other half of the rule, and the reason it is `select-file` rather
     /// than "is it paused". Someone pressing pause and then a deploy landing
     /// must not read as an abandoned add — a queue that quietly restarts
@@ -336,6 +395,8 @@ mod tests {
             selected: Arc::new(Mutex::new(Vec::new())),
             has_selection: true,
             resolves_to_child: false,
+            fails: false,
+            status_calls: Default::default(),
         };
         let state = state_for(mock_aria2(mock.clone()).await);
 
@@ -361,6 +422,8 @@ mod tests {
             selected: Arc::new(Mutex::new(Vec::new())),
             has_selection: false,
             resolves_to_child: false,
+            fails: false,
+            status_calls: Default::default(),
         };
         let state = state_for(mock_aria2(mock.clone()).await);
 
@@ -389,6 +452,8 @@ mod tests {
             selected: Arc::new(Mutex::new(Vec::new())),
             has_selection: false,
             resolves_to_child: true,
+            fails: false,
+            status_calls: Default::default(),
         };
         let state = state_for(mock_aria2(mock.clone()).await);
         let _claim = state.adding.claim("stranded-gid");
