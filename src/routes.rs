@@ -802,7 +802,8 @@ pub async fn resume(State(state): State<AppState>, Path(gid): Path<String>) -> A
 /// Delete what a cancelled torrent wrote: its files, their `.aria2` control
 /// files, the torrent's own control file, and the directories that leaves
 /// empty. Never a file that was in the library before the download started
-/// (see `state::Preexisting`). For a download with no such record, one added
+/// (see `state::Preexisting`), nor a deselected one aria2 holds no bytes for.
+/// For a download with no such record, one added
 /// before this process started, only selected files aria2 has not completed
 /// go, since a complete one may be a pre-existing file aria2 verified.
 /// Failures are logged, not fatal: the download is already out of the queue
@@ -812,7 +813,12 @@ async fn delete_partial(state: &AppState, status: &Download) {
     let mut deleted = Vec::new();
     for f in &status.files {
         let wrote = match &known {
-            Some(existing) => !existing.contains(std::path::Path::new(&f.path)),
+            // A deselected path aria2 holds no bytes for is not its own: something
+            // else may have put a file there since the add.
+            Some(existing) => {
+                !existing.contains(std::path::Path::new(&f.path))
+                    && (f.selected || f.completed_length > 0)
+            }
             None => f.selected && f.completed_length < f.length,
         };
         if wrote && remove_contained(state, &f.path).await {
@@ -1309,7 +1315,8 @@ mod tests {
         let neighbour = root.join("Other/keep.mkv");
         let control = root.join("Show.aria2");
         let already_there = root.join("Show/Season 1/ep00.mkv");
-        for f in [&episode, &neighbour, &control, &already_there] {
+        let dropped_in = root.join("Show/poster.jpg");
+        for f in [&episode, &neighbour, &control, &already_there, &dropped_in] {
             tokio::fs::create_dir_all(f.parent().unwrap())
                 .await
                 .unwrap();
@@ -1335,6 +1342,11 @@ mod tests {
             files: vec![
                 file(&episode),
                 file(&root.join("Show/never-arrived.nfo")),
+                crate::aria2::File {
+                    selected: false,
+                    completed_length: 0,
+                    ..file(&dropped_in)
+                },
                 file(&already_there),
             ],
             bittorrent_name: Some("Show".to_string()),
@@ -1345,6 +1357,11 @@ mod tests {
             .preexisting
             .record(&download.gid, HashSet::from([already_there.clone()]));
         delete_partial(&state, &download).await;
+
+        assert!(
+            dropped_in.exists(),
+            "a file aria2 never wrote, created after the add, was deleted"
+        );
 
         assert!(
             already_there.exists(),

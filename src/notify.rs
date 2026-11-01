@@ -70,6 +70,7 @@ pub fn spawn_watcher(state: AppState) {
                     // left to delete.
                     if terminal && d.status != Status::Error {
                         sweep_garbage(&state, d).await;
+                        state.preexisting.forget(&d.gid);
                     }
                     seen.insert(
                         d.gid.clone(),
@@ -105,6 +106,7 @@ pub fn spawn_watcher(state: AppState) {
                         failed(&state, d.display_name(), error).await;
                     } else {
                         sweep_garbage(&state, d).await;
+                        state.preexisting.forget(&d.gid);
                         state
                             .activity
                             .record(&d.gid, format!("finished — {}", d.dir));
