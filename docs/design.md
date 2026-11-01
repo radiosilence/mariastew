@@ -48,15 +48,13 @@ than a percentage:
   merely slow. How long it has been does, and that is what the log's timestamps
   answer.
 
-  It also holds all the way through, which it did not: the metadata pass
-  reaches aria2's `Complete` the moment the *torrent file* arrives, and every
-  reading taken off its byte counters was answering about the wrong download.
-  For a second the row went green, said "downloaded" beside the torrent's
-  name, filled its bar and put "0s left" under it, Telegram announced a
-  finished download, `sweep_garbage` walked a directory nothing had been
-  written to — and then the torrent started downloading. A metadata pass now
-  measures nothing at all (`Download::display_totals`), so it renders as the
-  unknown it is: indeterminate bar, no size, no ETA, still *finding peers*.
+  It also holds through the metadata pass. That pass reaches aria2's
+  `Complete` the moment the *torrent file* arrives, so every reading taken off
+  its byte counters would describe the wrong download: a green row saying
+  "downloaded" with a full bar and "0s left", a Telegram announcement, and a
+  `sweep_garbage` of a directory nothing has been written to. A metadata pass
+  measures nothing (`Download::display_totals`), so it renders as the unknown
+  it is: indeterminate bar, no size, no ETA, still *finding peers*.
 - **Readings, not just a bar:** bytes done against total, up and down rates,
   bytes given back and the share ratio, peers against seeders, and the piece
   count and size — which is the explanation for both lumpy progress and for a
