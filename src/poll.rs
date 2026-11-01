@@ -43,10 +43,14 @@ pub struct RenderedRow {
 pub struct View {
     pub rows: Vec<RenderedRow>,
     pub full: Arc<str>,
+    /// `full` is the unreachable warning rather than a list.
+    pub unreachable: bool,
 }
 
 pub struct Snapshot {
-    pub downloads: Arc<Vec<Download>>,
+    /// `None` when aria2 did not answer. Readers that act on transitions skip
+    /// these: an outage is not every download disappearing.
+    pub downloads: Option<Arc<Vec<Download>>>,
     /// None when no viewers or render fails.
     pub view: Option<View>,
 }
@@ -57,19 +61,29 @@ pub struct Poll {
     viewers: Arc<AtomicUsize>,
     /// Wakes idle poller when a viewer connects.
     woken: Arc<Notify>,
+    /// Set once the process is shutting down. Every open stream ends on it,
+    /// because graceful shutdown waits for in-flight responses and a stream
+    /// would otherwise hold the process open until it is killed.
+    closing: Arc<watch::Sender<bool>>,
 }
 
 impl Poll {
     pub fn new() -> Self {
         let (tx, _) = watch::channel(Arc::new(Snapshot {
-            downloads: Arc::new(Vec::new()),
+            downloads: None,
             view: None,
         }));
         Self {
             tx: Arc::new(tx),
             viewers: Arc::new(AtomicUsize::new(0)),
             woken: Arc::new(Notify::new()),
+            closing: Arc::new(watch::channel(false).0),
         }
+    }
+
+    /// Ends every stream, including ones opened after this call.
+    pub fn close(&self) {
+        self.closing.send_replace(true);
     }
 
     /// Snapshots without rendering (for the notifier).
@@ -89,6 +103,7 @@ impl Poll {
         self.woken.notify_one();
         Viewer {
             rx: self.tx.subscribe(),
+            closing: self.closing.subscribe(),
             viewers: Arc::clone(&self.viewers),
         }
     }
@@ -97,13 +112,20 @@ impl Poll {
 /// One open page. Dropping it decrements the viewer count.
 pub struct Viewer {
     rx: watch::Receiver<Arc<Snapshot>>,
+    closing: watch::Receiver<bool>,
     viewers: Arc<AtomicUsize>,
 }
 
 impl Viewer {
+    /// The next snapshot, or `None` once the process is shutting down.
     pub async fn next(&mut self) -> Option<Arc<Snapshot>> {
-        self.rx.changed().await.ok()?;
-        Some(self.rx.borrow_and_update().clone())
+        tokio::select! {
+            changed = self.rx.changed() => {
+                changed.ok()?;
+                Some(self.rx.borrow_and_update().clone())
+            }
+            _ = self.closing.wait_for(|closing| *closing) => None,
+        }
     }
 }
 
@@ -117,6 +139,7 @@ impl Drop for Viewer {
 /// the notifier's while nobody is.
 pub fn spawn(state: AppState) {
     tokio::spawn(async move {
+        let mut failures = 0u32;
         loop {
             let watched = state.poll.watched();
             if watched {
@@ -128,21 +151,42 @@ pub fn spawn(state: AppState) {
                 }
             }
 
-            let downloads = match all_downloads(&state).await {
-                Ok(d) => d,
+            let snapshot = match all_downloads(&state).await {
+                Ok(downloads) => {
+                    if failures > 0 {
+                        tracing::info!(failures, "poll: aria2 answering again");
+                    }
+                    failures = 0;
+                    Snapshot {
+                        view: watched.then(|| render(&state, &downloads)).flatten(),
+                        downloads: Some(Arc::new(downloads)),
+                    }
+                }
                 Err(e) => {
-                    tracing::warn!(error = %e, "poll: aria2 poll failed, retrying next tick");
-                    continue;
+                    failures += 1;
+                    if failures == 1 {
+                        tracing::warn!(error = %e, "poll: aria2 poll failed, retrying");
+                    } else {
+                        tracing::debug!(error = %e, failures, "poll: aria2 poll failed");
+                    }
+                    // One slow answer is not an outage worth flipping every
+                    // open page over for.
+                    if failures < OUTAGE_AFTER {
+                        continue;
+                    }
+                    Snapshot {
+                        downloads: None,
+                        view: watched.then(render_unreachable).flatten(),
+                    }
                 }
             };
-            let view = watched.then(|| render(&state, &downloads)).flatten();
-            let _ = state.poll.tx.send(Arc::new(Snapshot {
-                downloads: Arc::new(downloads),
-                view,
-            }));
+            let _ = state.poll.tx.send(Arc::new(snapshot));
         }
     });
 }
+
+/// Consecutive failed polls before aria2 is reported unreachable.
+const OUTAGE_AFTER: u32 = 3;
 
 /// Every row rendered on its own and the container rendered around them. The
 /// container costs a second pass over the same rows, which is worth the
@@ -169,11 +213,36 @@ fn render(state: &AppState, downloads: &[Download]) -> Option<View> {
         (Ok(rows), Ok(full)) => Some(View {
             rows,
             full: full.into(),
+            unreachable: false,
         }),
         (Err(e), _) | (_, Err(e)) => {
             tracing::error!(error = %e, "poll: template render failed, retrying next tick");
             None
         }
+    }
+}
+
+/// The list replaced by the warning, so an outage that starts while a page is
+/// open says so instead of leaving the last list standing.
+fn render_unreachable() -> Option<View> {
+    let full = views::Downloads {
+        rows: Vec::new(),
+        aria2_unreachable: true,
+    }
+    .render()
+    .inspect_err(|e| tracing::error!(error = %e, "poll: template render failed"))
+    .ok()?;
+    Some(View {
+        rows: Vec::new(),
+        full: full.into(),
+        unreachable: true,
+    })
+}
+
+#[cfg(test)]
+impl Poll {
+    pub(crate) fn publish(&self, snapshot: Snapshot) {
+        let _ = self.tx.send(Arc::new(snapshot));
     }
 }
 
@@ -203,6 +272,17 @@ mod tests {
         assert!(poll.watched(), "one page closing is not every page closing");
         drop(two);
         assert!(!poll.watched());
+    }
+
+    /// Graceful shutdown waits for every response to finish, and a stream
+    /// never does on its own.
+    #[tokio::test]
+    async fn closing_ends_open_streams_and_ones_opened_afterwards() {
+        let poll = Poll::new();
+        let mut open = poll.viewer();
+        poll.close();
+        assert!(open.next().await.is_none());
+        assert!(poll.viewer().next().await.is_none());
     }
 
     fn state() -> AppState {

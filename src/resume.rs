@@ -47,7 +47,9 @@ pub fn spawn(state: AppState) {
         let mut poll = state.poll.subscribe();
         let mut selected = HashSet::new();
         while poll.changed().await.is_ok() {
-            let downloads = poll.borrow_and_update().downloads.clone();
+            let Some(downloads) = poll.borrow_and_update().downloads.clone() else {
+                continue;
+            };
             reconcile(&state, &downloads, &mut selected).await;
         }
     });

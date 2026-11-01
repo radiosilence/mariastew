@@ -1,0 +1,1 @@
+- **Open pages say when aria2 stops answering.** The list used to freeze where it was until a reload; it is now replaced by the warning and restored when aria2 is back.

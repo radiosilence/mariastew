@@ -331,8 +331,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends musl-tools
       - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # stable
         with:
-          # Pinned, because this is what ships; `check` floats.
-          toolchain: "1.97"
+          toolchain: stable
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
