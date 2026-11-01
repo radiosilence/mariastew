@@ -58,7 +58,7 @@
      The `datastar-fetch` handler is filtered to this element because it hears
      every request the page makes, and the picker's `@get('/browse')` arriving
      is no evidence the stream is up. #}
-{# `$addStatus` and `$addMessage` are the whole contract with the server for
+{# `$_addStatus` and `$_addMessage` are the whole contract with the server for
      this form: POST /add answers with a JSON body, which Datastar treats as a
      signal patch on its own (Content-Type: application/json is all it takes, no
      SSE framing required). `ok` closes the dialog and confirms; `error` keeps it
@@ -70,15 +70,20 @@
      top-level signal has no parent. `''` rather than `null` because a null in a
      `data-signals` patch deletes the key rather than setting it.
 
-     `addDone` rides along with an error: the magnets of a batch that did go in,
-     whose rows the sheet drops so a retry sends only what is left.
+     `_addDone` rides along with an error: the magnets of a batch that did go
+     in, whose rows the sheet drops so a retry sends only what is left.
 
-     `__ifmissing` seeds them without stomping a patch that arrived first. #}
+     `__ifmissing` seeds them without stomping a patch that arrived first.
+
+     Every signal on this page starts with `_`. Datastar sends all signals
+     with every request unless they are prefixed so, and the server reads
+     none of them; otherwise every `/stream` reconnect would carry each row's
+     indicator signals in its query string. #}
 <body data-init="@get('/stream')"
   data-on:datastar-fetch="evt.detail.el === el && ms.streamEvent(evt)"
   data-on-interval__duration.5s="ms.streamLost() && @get('/stream')"
   data-on:visibilitychange__document="!document.hidden && @get('/stream')"
-  data-signals__ifmissing="{addStatus: '', addMessage: '', addDone: []}"
+  data-signals__ifmissing="{_addStatus: '', _addMessage: '', _addDone: []}"
   class="min-h-dvh bg-base-200">
 
 {# The header is the primary action, not a name plus an action — the person
@@ -97,7 +102,7 @@
 <header class="bg-base-100 border-b border-base-300 p-4">
   <button type="button" class="btn btn-primary btn-lg min-h-14 w-full"
     aria-label="Add download" title="Add download"
-    data-on:click="$addDialog.showModal()">{% call icons::magnet(class="text-3xl") %}{% endcall %}</button>
+    data-on:click="$_addDialog.showModal()">{% call icons::magnet(class="text-3xl") %}{% endcall %}</button>
 </header>
 
 {# A bottom sheet, not a centered dialog: pinned to the bottom edge, which is
@@ -111,7 +116,7 @@
      keyboard needs — is `.sheet` in the stylesheet rather than utilities
      here, because the user agent has rules of its own about all four and
      an author rule wins outright where a margin utility only argues (#353). #}
-{# It closes itself off `$addStatus` rather than off the fetch, so it does not
+{# It closes itself off `$_addStatus` rather than off the fetch, so it does not
      care whether the answer came back as a plain JSON body or an SSE patch.
 
      Reset on close rather than on open. A chosen destination and a half-typed
@@ -122,14 +127,14 @@
      `method="dialog"`, `closedby="any"`, and Escape alike. Re-fetching the
      picker with no path returns it to the roots.
 
-     `$addStatus` is cleared whatever it held. A success used to be left set for
+     `$_addStatus` is cleared whatever it held. A success used to be left set for
      the toast to keep reading, which made the toast the only thing that ever
      cleared it — an `ok` that outlives this dialog is one the next `data-effect`
      run closes it on. Nothing outside reads it now, so it dies with the
      attempt. #}
-<dialog id="add-dialog" closedby="any" data-ref="addDialog"
-  data-effect="if ($addStatus === 'ok') el.close(); else if ($addStatus === 'error') ms.dropMagnets($magnetRows, $addDone)"
-  data-on:close="$addStatus = ''; $addMessage = ''; ms.resetMagnets($magnetRows); @get('/browse')"
+<dialog id="add-dialog" closedby="any" data-ref="_addDialog"
+  data-effect="if ($_addStatus === 'ok') el.close(); else if ($_addStatus === 'error') ms.dropMagnets($_magnetRows, $_addDone)"
+  data-on:close="$_addStatus = ''; $_addMessage = ''; ms.resetMagnets($_magnetRows); @get('/browse')"
   class="sheet open:flex flex-col rounded-t-2xl sm:rounded-box bg-base-100 shadow-xl backdrop:bg-black/50">
   <div class="mx-auto mt-3 h-1.5 w-10 shrink-0 rounded-full bg-base-300 sm:hidden"></div>
   {# `autofocus` on the form, which takes `tabindex="-1"` to be focusable at
@@ -164,10 +169,10 @@
          the first: no attribute on a row is a Datastar one, and the handlers
          that serve them are delegated from here, the way the picker's are.
          The remove button hides itself while its row is the only one. #}
-    <div class="flex flex-col gap-2" data-ref="magnetRows"
+    <div class="flex flex-col gap-2" data-ref="_magnetRows"
       data-on:click="ms.magnetRowClick(evt)"
       data-on:paste="ms.pasteMany(evt)"
-      data-on:keydown="ms.clickOnEnter(evt, $addSubmit)">
+      data-on:keydown="ms.clickOnEnter(evt, $_addSubmit)">
       <div class="group/magnet flex gap-2" data-magnet-row>
         <input name="magnet" placeholder="Paste a magnet link" enterkeyhint="go"
           inputmode="url" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"
@@ -184,7 +189,7 @@
       </div>
     </div>
     <button type="button" class="btn btn-ghost btn-sm self-start"
-      data-on:click="ms.addMagnetRow($magnetRows)">{% call icons::plus() %}{% endcall %} Another magnet</button>
+      data-on:click="ms.addMagnetRow($_magnetRows)">{% call icons::plus() %}{% endcall %} Another magnet</button>
     <details class="disclosure rounded-box border border-base-300">
       <summary class="min-h-11 flex items-center gap-2 p-3 cursor-pointer text-sm">
         {% call icons::chevron_right() %}{% endcall %}
@@ -219,9 +224,9 @@
        the element's whole content, so anything nested in the same element is
        gone the first time an error arrives. #}
   <p class="flex shrink-0 items-start gap-1.5 px-4 text-sm text-error"
-    data-show="$addStatus === 'error'">
+    data-show="$_addStatus === 'error'">
     {% call icons::triangle_alert() %}{% endcall %}
-    <span data-text="$addMessage"></span>
+    <span data-text="$_addMessage"></span>
   </p>
 
   {# max(padding, safe-area-inset) clears home indicator on gesture phones.
@@ -239,17 +244,17 @@
          explicitly which form to serialize instead of walking up from here
          and finding none.
 
-         data-indicator sets $adding for exactly the request's duration, which
+         data-indicator sets $_adding for exactly the request's duration, which
          is what drives both the disabled state (a second tap while the first is
          still in flight is how the owner's retries piled up duplicate "already
          registered" errors) and the label. The signals are cleared before
          firing so a stale error from a previous attempt does not linger through
          a fresh one. #}
     <button type="button" id="add-submit" class="btn btn-primary min-h-12 flex-[2]"
-      data-ref="addSubmit" data-indicator="adding" data-attr:disabled="$adding"
-      data-on:click="$addStatus = ''; $addMessage = ''; @post('/add', {contentType: 'form', selector: '#add-form'})">
-      <span data-show="$adding" class="loading loading-spinner loading-sm"></span>
-      <span data-text="$adding ? 'Adding…' : 'Add'"></span>
+      data-ref="_addSubmit" data-indicator="_adding" data-attr:disabled="$_adding"
+      data-on:click="$_addStatus = ''; $_addMessage = ''; @post('/add', {contentType: 'form', selector: '#add-form'})">
+      <span data-show="$_adding" class="loading loading-spinner loading-sm"></span>
+      <span data-text="$_adding ? 'Adding…' : 'Add'"></span>
     </button>
   </div>
 </dialog>

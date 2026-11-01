@@ -1,0 +1,23 @@
+{# Markup a row repeats, written once. #}
+
+{# One label and value in a row's readings. The value is the call body. #}
+{% macro reading(label) %}
+<div class="flex justify-between gap-2">
+  <dt class="opacity-60">{{ label }}</dt>
+  <dd class="text-right">{{ caller() }}</dd>
+</div>
+{% endmacro %}
+
+{# A row control that posts `verb` for one download and spins for exactly its
+     own request. `data-indicator` counts only requests raised by the element
+     carrying it, so the signal is named for the download as well as the slot:
+     two rows pressed at once do not spin each other. The signal starts with
+     `_` so Datastar keeps it out of every request it sends. The icon is the
+     call body. #}
+{% macro action(gid, verb, slot, label, class="") %}
+<button type="button" class="btn btn-sm {{ class }} min-h-11 flex-1"
+  data-indicator="_{{ slot }}{{ gid }}" data-attr:disabled="$_{{ slot }}{{ gid }}"
+  data-on:click="@post('/downloads/{{ gid }}/{{ verb }}')">
+  <span data-show="$_{{ slot }}{{ gid }}" class="loading loading-spinner loading-xs"></span>
+  <span data-show="!$_{{ slot }}{{ gid }}" class="contents">{{ caller() }}</span> {{ label }}</button>
+{% endmacro %}

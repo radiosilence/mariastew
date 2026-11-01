@@ -1,7 +1,6 @@
 //! The page, the stream, and the four things the page can ask for.
 
 use std::collections::HashSet;
-use std::convert::Infallible;
 use std::time::Duration;
 
 use askama::Template;
@@ -12,7 +11,6 @@ use axum::response::{Html, IntoResponse, Response, Sse};
 use axum::routing::{get, post};
 use axum::{Form, Router};
 use axum_extra::extract::Form as MultiForm;
-use futures_util::stream;
 
 use crate::aria2::{Download, Status};
 use crate::auth::extract::CurrentSession;
@@ -357,7 +355,7 @@ enum Refused {
 /// still a warning here, so this is a change to what the browser is told, not
 /// to what we can see.
 ///
-/// An error also names the magnets that did go in, as `addDone`, so the sheet
+/// An error also names the magnets that did go in, as `_addDone`, so the sheet
 /// can drop their rows and leave only what still needs attention. Sending the
 /// rows back again would add nothing and fail them as already listed.
 fn add_outcome(message: Option<&str>, done: &[&str]) -> Response {
@@ -365,8 +363,8 @@ fn add_outcome(message: Option<&str>, done: &[&str]) -> Response {
     // `data-signals__ifmissing` in page.html for why the client cannot read a
     // nested one reliably.
     let body = match message {
-        None => serde_json::json!({ "addStatus": "ok" }),
-        Some(m) => serde_json::json!({ "addStatus": "error", "addMessage": m, "addDone": done }),
+        None => serde_json::json!({ "_addStatus": "ok" }),
+        Some(m) => serde_json::json!({ "_addStatus": "error", "_addMessage": m, "_addDone": done }),
     };
     (StatusCode::OK, axum::Json(body)).into_response()
 }
@@ -1032,9 +1030,10 @@ pub async fn browse(
         }
     };
 
+    // An HTML answer to a Datastar request is morphed into the element with
+    // the same id, `#picker`; no stream is needed for one patch.
     let html = view.render().map_err(|e| AppError::Internal(e.into()))?;
-    let event = patch_elements(&html);
-    Ok(Sse::new(stream::once(async move { Ok::<_, Infallible>(event) })).into_response())
+    Ok(Html(html).into_response())
 }
 
 #[derive(serde::Deserialize)]
@@ -1793,9 +1792,9 @@ mod tests {
                 .expect("a small json body");
             let body: serde_json::Value =
                 serde_json::from_slice(&body).expect("add answers with json");
-            assert_eq!(body["addStatus"], "error");
+            assert_eq!(body["_addStatus"], "error");
             assert!(
-                body["addMessage"].as_str().is_some_and(|m| !m.is_empty()),
+                body["_addMessage"].as_str().is_some_and(|m| !m.is_empty()),
                 "the rejection has to say something, got {body}"
             );
         }
@@ -1828,8 +1827,8 @@ mod tests {
                 .expect("a small json body");
             let body: serde_json::Value =
                 serde_json::from_slice(&body).expect("add answers with json");
-            assert_eq!(body["addMessage"], "Link 3 is not a magnet link.");
-            assert_eq!(body["addDone"], serde_json::json!([]));
+            assert_eq!(body["_addMessage"], "Link 3 is not a magnet link.");
+            assert_eq!(body["_addDone"], serde_json::json!([]));
             assert!(calls.lock().unwrap().is_empty(), "aria2 was asked anyway");
         }
 
@@ -1860,7 +1859,7 @@ mod tests {
             let body: serde_json::Value =
                 serde_json::from_slice(&body).expect("add answers with json");
             assert_eq!(
-                body["addMessage"],
+                body["_addMessage"],
                 "Added 0 of 2; 2 are already in the list."
             );
             assert_eq!(
