@@ -49,8 +49,7 @@ for (const file of readdirSync(templatesDir)) {
 }
 
 const icons = readFileSync(iconsPath, "utf8");
-const macroRe =
-  /\{% macro (\w+)\(class="[^"]*"\) %\}<svg[^>]*>([\s\S]*?)<\/svg>\{% endmacro %\}/g;
+const macroRe = /\{% macro (\w+)\(class="[^"]*"\) %\}<svg[^>]*>([\s\S]*?)<\/svg>\{% endmacro %\}/g;
 
 const defined = new Map<string, string>();
 for (const m of icons.matchAll(macroRe)) defined.set(m[1], m[2]);

@@ -1,4 +1,4 @@
-//#region web/app.ts
+// web/app.ts
 /**
 * The Datastar fetch events that are evidence the stream is carrying bytes.
 *
@@ -248,4 +248,3 @@ if (viewport) {
 	viewport.addEventListener("scroll", publish);
 	publish();
 }
-//#endregion

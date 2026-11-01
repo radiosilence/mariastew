@@ -128,8 +128,9 @@ job either passed or was skipped.
 Jobs skip when a change does not touch their domain. `changes` diffs a pull
 request against its base and a push against the last commit on main whose run
 passed, and sets one output per domain: `rust` (the crate, its templates and
-committed assets, `mise.toml`), `package` (`deploy/pulumi/`) and `docker` (the
-release binaries and the image). Markdown never counts; anything under
+committed assets, `mise.toml`), `web` (the TypeScript, the stylesheet source
+and the committed assets built from them), `package` (`deploy/pulumi/`) and
+`docker` (the release binaries and the image). Markdown never counts; anything under
 `.github/` counts for every domain; a manual run or a release runs everything.
 To add a domain, add an output and a `touches` allowlist to `changes`, gate the
 new job on it with `if:`, and add the job to the `needs` of `Checks`.

@@ -4,10 +4,12 @@
   "type": "module",
   "devDependencies": {
     "@tailwindcss/cli": "4.3.3",
-    "daisyui": "5.7.16",
-    "lucide-static": "1.30.0",
-    "rolldown": "1.2.3",
+    "daisyui": "5.7.50",
+    "lucide-static": "1.66.0",
+    "oxfmt": "0.75.0",
+    "oxlint": "1.90.0",
+    "rolldown": "1.2.16",
     "tailwindcss": "4.3.3",
-    "typescript": "6.0.3"
+    "typescript": "7.0.2"
   }
 }

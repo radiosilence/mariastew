@@ -14,9 +14,7 @@
 import * as z from "zod";
 
 /** Absolute, because a container's working directory is not what you think. */
-export const AbsolutePath = z
-  .string()
-  .startsWith("/", "must be an absolute path");
+export const AbsolutePath = z.string().startsWith("/", "must be an absolute path");
 
 /** A Kubernetes resource quantity — `500m`, `2`, `64Mi`, `8Gi`. */
 export const Quantity = z

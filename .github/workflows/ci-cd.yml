@@ -54,6 +54,7 @@ jobs:
       contents: read
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
+      web: ${{ steps.filter.outputs.web }}
       package: ${{ steps.filter.outputs.package }}
       docker: ${{ steps.filter.outputs.docker }}
       release: ${{ steps.filter.outputs.release }}
@@ -73,7 +74,7 @@ jobs:
         # until it is added. Under pipefail, greps run in conditions and never
         # exit early with -q.
         run: |
-          rust=true package=true docker=true release=false
+          rust=true web=true package=true docker=true release=false
           version_of() { sed -n 's/^version = "\(.*\)"/\1/p' | head -1; }
           base=HEAD^1
           if [ "$EVENT" = "push" ]; then
@@ -135,6 +136,9 @@ jobs:
             # script bundle, so they are Rust too. mise.toml pins the
             # toolchain `check` runs; no other job reads it.
             touches '^src/|^templates/|^assets/|^build\.rs$|^Cargo\.(toml|lock)$|^mise\.toml$|^\.github/' || rust=false
+            # The browser bundle, the stylesheet and the toolchain that builds
+            # them, plus everything they are generated from or lint covers.
+            touches '^web/|^styles/|^templates/|^assets/|^scripts/.*\.ts$|^deploy/pulumi/src/|^package\.json$|^aube-lock\.yaml$|^tsconfig\.web\.json$|^mise\.toml$|^\.github/' || web=false
             touches '^deploy/pulumi/|^\.github/' || package=false
             # The static binaries and the image that copies them in. `check`
             # already checks the code, so a pull request builds these only
@@ -149,6 +153,7 @@ jobs:
           fi
           {
             echo "rust=$rust"
+            echo "web=$web"
             echo "package=$package"
             echo "docker=$docker"
             echo "release=$release"
@@ -215,6 +220,29 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
       - run: cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
+
+  # The TypeScript and the committed assets built from it. Assets are
+  # committed so `cargo build` needs no Node, which only holds while they
+  # match their sources: rebuilding them here must change nothing.
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
+      - run: aube ci
+      - run: mise run lint
+      - run: mise run typecheck:web
+      - run: mise run css && mise run js
+      - run: |
+          if [ -n "$(git status --porcelain -- assets)" ]; then
+            git status --short -- assets
+            echo "::error::committed assets are stale; run mise run css and mise run js"
+            exit 1
+          fi
 
   # CHANGELOG.md is generated from changelog.d/ (scripts/changelog.py). A pull
   # request adds fragments without regenerating it, so only its fragments and
@@ -407,7 +435,7 @@ jobs:
     name: Checks
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [changes, make-room, check, changelog, chart, version, linux-build, container]
+    needs: [changes, make-room, check, web, changelog, chart, version, linux-build, container]
     if: always()
     steps:
       - env:
