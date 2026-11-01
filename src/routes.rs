@@ -264,10 +264,16 @@ pub async fn stream(
             let snapshot = tokio::select! {
                 next = viewer.next() => match next {
                     Some(snapshot) => snapshot,
-                    None => break,
+                    // Shutting down. Aborted rather than ended: Datastar
+                    // retries a stream that errors within a second, and one
+                    // that ends cleanly only when the page's watchdog fires.
+                    None => {
+                        yield Err(std::io::Error::other("shutting down"));
+                        break;
+                    }
                 },
                 _ = beat.tick() => {
-                    yield Ok::<_, Infallible>(heartbeat());
+                    yield Ok::<_, std::io::Error>(heartbeat());
                     continue;
                 }
             };
@@ -291,12 +297,12 @@ pub async fn stream(
                 Some(rows) => {
                     let any = !rows.is_empty();
                     for row in rows {
-                        yield Ok::<_, Infallible>(patch_elements(&row.html));
+                        yield Ok::<_, std::io::Error>(patch_elements(&row.html));
                     }
                     any
                 }
                 None => {
-                    yield Ok::<_, Infallible>(patch_elements(&view.full));
+                    yield Ok::<_, std::io::Error>(patch_elements(&view.full));
                     true
                 }
             };

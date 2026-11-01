@@ -57,6 +57,10 @@ pub struct Poll {
     viewers: Arc<AtomicUsize>,
     /// Wakes idle poller when a viewer connects.
     woken: Arc<Notify>,
+    /// Set once the process is shutting down. Every open stream ends on it,
+    /// because graceful shutdown waits for in-flight responses and a stream
+    /// would otherwise hold the process open until it is killed.
+    closing: Arc<watch::Sender<bool>>,
 }
 
 impl Poll {
@@ -69,7 +73,13 @@ impl Poll {
             tx: Arc::new(tx),
             viewers: Arc::new(AtomicUsize::new(0)),
             woken: Arc::new(Notify::new()),
+            closing: Arc::new(watch::channel(false).0),
         }
+    }
+
+    /// Ends every stream, including ones opened after this call.
+    pub fn close(&self) {
+        self.closing.send_replace(true);
     }
 
     /// Snapshots without rendering (for the notifier).
@@ -89,6 +99,7 @@ impl Poll {
         self.woken.notify_one();
         Viewer {
             rx: self.tx.subscribe(),
+            closing: self.closing.subscribe(),
             viewers: Arc::clone(&self.viewers),
         }
     }
@@ -97,13 +108,20 @@ impl Poll {
 /// One open page. Dropping it decrements the viewer count.
 pub struct Viewer {
     rx: watch::Receiver<Arc<Snapshot>>,
+    closing: watch::Receiver<bool>,
     viewers: Arc<AtomicUsize>,
 }
 
 impl Viewer {
+    /// The next snapshot, or `None` once the process is shutting down.
     pub async fn next(&mut self) -> Option<Arc<Snapshot>> {
-        self.rx.changed().await.ok()?;
-        Some(self.rx.borrow_and_update().clone())
+        tokio::select! {
+            changed = self.rx.changed() => {
+                changed.ok()?;
+                Some(self.rx.borrow_and_update().clone())
+            }
+            _ = self.closing.wait_for(|closing| *closing) => None,
+        }
     }
 }
 
@@ -203,6 +221,17 @@ mod tests {
         assert!(poll.watched(), "one page closing is not every page closing");
         drop(two);
         assert!(!poll.watched());
+    }
+
+    /// Graceful shutdown waits for every response to finish, and a stream
+    /// never does on its own.
+    #[tokio::test]
+    async fn closing_ends_open_streams_and_ones_opened_afterwards() {
+        let poll = Poll::new();
+        let mut open = poll.viewer();
+        poll.close();
+        assert!(open.next().await.is_none());
+        assert!(poll.viewer().next().await.is_none());
     }
 
     fn state() -> AppState {
