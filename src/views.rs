@@ -1363,7 +1363,7 @@ mod tests {
     /// side of it is otherwise silent until someone presses the button.
     #[test]
     fn every_ms_helper_a_template_calls_is_defined() {
-        const SCRIPT: &str = include_str!(concat!("../assets/", env!("APP_JS_FILENAME")));
+        const SCRIPT: &str = include_str!("../web/ms.ts");
         let page = Page {
             roots: vec![],
             rows: vec![],
@@ -1392,7 +1392,7 @@ mod tests {
         for name in called {
             assert!(
                 SCRIPT.contains(&format!("{name}(")),
-                "a template calls ms.{name}() but assets/app.js does not define it"
+                "a template calls ms.{name}() but web/ms.ts does not define it"
             );
         }
     }

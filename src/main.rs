@@ -42,7 +42,7 @@ pub const APP_JS_PATH: &str = concat!("/assets/", env!("APP_JS_FILENAME"));
 
 /// Everything this page needs comes from this origin, so the policy says so.
 /// Nothing is fetched from a CDN and no handler is written into the markup —
-/// `app.js` and the vendored Datastar bundle are both served from here, and
+/// the script bundle, Datastar included, is served from here, and
 /// every behaviour hangs off a `data-*` attribute rather than an `onclick`.
 ///
 /// `unsafe-eval` is the one concession, and it is not optional: Datastar
@@ -93,10 +93,9 @@ async fn security_headers(
     response
 }
 
-/// Served from the binary rather than a volume: the stylesheet and the vendored
-/// bundle are build outputs, so a mount would be a second thing to keep in step
-/// with the image, and `app.js` travels with them because it is the same thing
-/// to the browser.
+/// Served from the binary rather than a volume: the stylesheet and the script
+/// bundle are build outputs, so a mount would be a second thing to keep in
+/// step with the image.
 ///
 /// Bodies are bytes rather than `&str` because half of these are now PNGs.
 /// `include_bytes!` covers the text ones too — the content type is stated here
@@ -107,16 +106,11 @@ async fn security_headers(
 /// browser asks for on its own, before it has parsed any `<link>` — and the
 /// only router that would otherwise answer it is behind the session layer, so
 /// an unauthenticated tab would get a login redirect where it wanted an image.
-const ASSETS: [(&str, &str, &[u8]); 12] = [
+const ASSETS: [(&str, &str, &[u8]); 11] = [
     (
         APP_JS_PATH,
         "text/javascript; charset=utf-8",
         include_bytes!(concat!("../assets/", env!("APP_JS_FILENAME"))),
-    ),
-    (
-        "/assets/datastar.js",
-        "text/javascript; charset=utf-8",
-        include_bytes!("../assets/datastar.js"),
     ),
     (
         "/assets/app.css",
