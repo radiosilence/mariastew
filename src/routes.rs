@@ -63,37 +63,16 @@ pub fn router() -> Router<AppState> {
 /// errored — the order `page` renders them in, and the order every snapshot
 /// the poller publishes carries.
 pub(crate) async fn all_downloads(state: &AppState) -> AppResult<Vec<Download>> {
-    let mut downloads = state.aria2.tell_active().await?;
-    downloads.extend(state.aria2.tell_waiting(0, 100).await?);
-    // Only the *stopped* list is swept for metadata rows. A resolving one is
-    // the only evidence an add exists — see the note below.
-    downloads.extend(
-        state
-            .aria2
-            .tell_stopped(0, 100)
-            .await?
-            .into_iter()
-            .filter(|d| !d.is_metadata()),
-    );
-    // Every magnet `add` resolves under its own gid before `follow-torrent`
-    // spawns the real download from it (see `finish_add_inner`), and aria2
-    // keeps that resolving gid in the stopped list forever afterward —
-    // nothing here ever removes it, since the real download is applied to the
-    // gid `follow-torrent` spawned rather than a second `addUri` that would
-    // need this one's gid freed first. aria2 names it `[METADATA]<name>` for
-    // as long as it exists, which is how it is told apart.
-    //
-    // Sweeping it from *every* list was hiding the add itself. Resolving a
-    // magnet means finding peers who will serve the torrent file, which takes
-    // as long as it takes and sometimes never finishes — and for that whole
-    // window the metadata row is the only record that anything has been added.
-    // A magnet that never resolves showed nothing, forever. It is also what the
-    // UI confirms an add with, now that nothing else does.
-    //
-    // While it is active or waiting it is exactly the row that should be on
-    // screen. Once the real download exists the metadata gid moves to the
-    // stopped list, where it is still swept, so it is replaced rather than
-    // duplicated.
+    let [mut downloads, waiting, stopped] = state.aria2.tell_all().await?;
+    downloads.extend(waiting);
+    // Only the *stopped* list is swept for metadata rows. Every magnet resolves
+    // under a gid of its own before `follow-torrent` spawns the real download
+    // (see `finish_add_inner`), and aria2 names that gid `[METADATA]<name>`.
+    // While it is active or waiting it is the only evidence the add exists,
+    // so it is exactly the row that should be on screen; once the real
+    // download exists it moves to the stopped list and is replaced rather
+    // than duplicated.
+    downloads.extend(stopped.into_iter().filter(|d| !d.is_metadata()));
     Ok(downloads)
 }
 
@@ -1284,6 +1263,43 @@ mod tests {
         assert_eq!(magnet_infohash("magnet:?dn=no-hash-here"), None);
     }
 
+    /// The stopped list is read from its newest end, so what just finished is
+    /// always in it, and handed on in aria2's own oldest-first order.
+    #[tokio::test]
+    async fn the_stopped_list_is_read_newest_first_and_shown_oldest_first() {
+        async fn rpc(
+            axum::Json(body): axum::Json<serde_json::Value>,
+        ) -> axum::Json<serde_json::Value> {
+            let stopped = |gid: &str| serde_json::json!({"gid": gid, "status": "complete", "dir": "/d", "files": []});
+            let results: Vec<_> = body["params"][0]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|call| match call["methodName"].as_str().unwrap() {
+                    "aria2.tellStopped" => {
+                        assert_eq!(call["params"][0], -1, "read from the oldest end");
+                        serde_json::json!([[stopped("newest"), stopped("older")]])
+                    }
+                    _ => serde_json::json!([[]]),
+                })
+                .collect();
+            axum::Json(serde_json::json!({"jsonrpc": "2.0", "id": "mariastew", "result": results}))
+        }
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(listener, Router::new().route("/", post(rpc)))
+                .await
+                .unwrap()
+        });
+
+        let downloads = all_downloads(&state(url)).await.unwrap();
+        assert_eq!(
+            downloads.iter().map(|d| d.gid.as_str()).collect::<Vec<_>>(),
+            ["older", "newest"]
+        );
+    }
+
     /// Everything below builds a fake aria2 on axum (already a dependency —
     /// its `hyper` server handles connection reuse without a hand-rolled
     /// listener) to exercise `add` and the detached `finish_add` together,
@@ -2001,11 +2017,37 @@ mod tests {
             AxumState(mock): AxumState<MockAria2>,
             Json(body): Json<serde_json::Value>,
         ) -> Json<serde_json::Value> {
-            let method = body["method"].as_str().unwrap_or_default().to_string();
-            mock.calls.lock().unwrap().push(method.clone());
+            let method = body["method"].as_str().unwrap_or_default();
+            let response = if method == "system.multicall" {
+                let results: Vec<_> = body["params"][0]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|call| {
+                        let answer = answer(&mock, call["methodName"].as_str().unwrap());
+                        match answer.get("result") {
+                            Some(result) => serde_json::json!([result]),
+                            None => serde_json::json!({"faultCode": 1, "faultString": answer["error"]["message"]}),
+                        }
+                    })
+                    .collect();
+                serde_json::json!({ "result": results })
+            } else {
+                answer(&mock, method)
+            };
+            let mut envelope = serde_json::json!({"jsonrpc": "2.0", "id": "mariastew"});
+            envelope
+                .as_object_mut()
+                .unwrap()
+                .extend(response.as_object().unwrap().clone());
+            Json(envelope)
+        }
+
+        fn answer(mock: &MockAria2, method: &str) -> serde_json::Value {
+            mock.calls.lock().unwrap().push(method.to_string());
             let mut status = mock.status.lock().unwrap();
             let stopped = |s: &str| matches!(s, "complete" | "error" | "removed");
-            let response = match method.as_str() {
+            match method {
                 "aria2.tellStatus" => match *status {
                     Some(s) => serde_json::json!({"result": download("g1", s)}),
                     None => error("No such download"),
@@ -2040,13 +2082,7 @@ mod tests {
                     }
                 }
                 other => panic!("unexpected aria2 method in test: {other}"),
-            };
-            let mut envelope = serde_json::json!({"jsonrpc": "2.0", "id": "mariastew"});
-            envelope
-                .as_object_mut()
-                .unwrap()
-                .extend(response.as_object().unwrap().clone());
-            Json(envelope)
+            }
         }
 
         struct Mock {
