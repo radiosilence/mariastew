@@ -121,6 +121,7 @@ impl Drop for Viewer {
 /// the notifier's while nobody is.
 pub fn spawn(state: AppState) {
     tokio::spawn(async move {
+        let mut failures = 0u32;
         loop {
             let watched = state.poll.watched();
             if watched {
@@ -133,12 +134,28 @@ pub fn spawn(state: AppState) {
             }
 
             let snapshot = match all_downloads(&state).await {
-                Ok(downloads) => Snapshot {
-                    view: watched.then(|| render(&state, &downloads)).flatten(),
-                    downloads: Some(Arc::new(downloads)),
-                },
+                Ok(downloads) => {
+                    if failures > 0 {
+                        tracing::info!(failures, "poll: aria2 answering again");
+                    }
+                    failures = 0;
+                    Snapshot {
+                        view: watched.then(|| render(&state, &downloads)).flatten(),
+                        downloads: Some(Arc::new(downloads)),
+                    }
+                }
                 Err(e) => {
-                    tracing::warn!(error = %e, "poll: aria2 poll failed, retrying next tick");
+                    failures += 1;
+                    if failures == 1 {
+                        tracing::warn!(error = %e, "poll: aria2 poll failed, retrying");
+                    } else {
+                        tracing::debug!(error = %e, failures, "poll: aria2 poll failed");
+                    }
+                    // One slow answer is not an outage worth flipping every
+                    // open page over for.
+                    if failures < OUTAGE_AFTER {
+                        continue;
+                    }
                     Snapshot {
                         downloads: None,
                         view: watched.then(render_unreachable).flatten(),
@@ -149,6 +166,9 @@ pub fn spawn(state: AppState) {
         }
     });
 }
+
+/// Consecutive failed polls before aria2 is reported unreachable.
+const OUTAGE_AFTER: u32 = 3;
 
 /// Every row rendered on its own and the container rendered around them. The
 /// container costs a second pass over the same rows, which is worth the

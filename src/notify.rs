@@ -355,11 +355,6 @@ mod tests {
         tokio::fs::write(path, b"bytes").await.unwrap();
     }
 
-    /// The bug this exists to fix: a torrent completes with garbage files
-    /// aria2 wrote anyway (piece-boundary spillover, not a selection
-    /// mistake), and until this ran they just sat there. A file
-    /// `filter::is_garbage` does not flag must survive whether or not aria2
-    /// selected it — this is not "delete whatever is unselected".
     /// An outage is not every download leaving the list. Treated as one, the
     /// first answer after it re-announces everything already finished.
     #[tokio::test]
@@ -370,25 +365,33 @@ mod tests {
             gid: "done".to_string(),
             ..download(&root, Vec::new())
         };
-        let reachable = || crate::poll::Snapshot {
-            downloads: Some(Arc::new(vec![finished.clone()])),
+        let fresh = Download {
+            gid: "fresh".to_string(),
+            ..download(&root, Vec::new())
+        };
+        let reachable = |downloads: Vec<Download>| crate::poll::Snapshot {
+            downloads: Some(Arc::new(downloads)),
             view: None,
         };
         spawn_watcher(state.clone());
         tokio::task::yield_now().await;
 
         for snapshot in [
-            reachable(),
+            reachable(vec![finished.clone()]),
             crate::poll::Snapshot {
                 downloads: None,
                 view: None,
             },
-            reachable(),
+            reachable(vec![finished.clone(), fresh]),
         ] {
             state.poll.publish(snapshot);
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
 
+        assert!(
+            !state.activity.entries("fresh").is_empty(),
+            "the watcher never saw the snapshot after the outage"
+        );
         assert!(
             state.activity.entries("done").is_empty(),
             "a download finished before the outage was announced again after it"
@@ -396,6 +399,11 @@ mod tests {
         let _ = tokio::fs::remove_dir_all(&root).await;
     }
 
+    /// The bug this exists to fix: a torrent completes with garbage files
+    /// aria2 wrote anyway (piece-boundary spillover, not a selection
+    /// mistake), and until this ran they just sat there. A file
+    /// `filter::is_garbage` does not flag must survive whether or not aria2
+    /// selected it — this is not "delete whatever is unselected".
     #[tokio::test]
     async fn sweep_garbage_removes_the_spillover_a_selection_could_not_stop() {
         let root = temp_root("spillover").await;
