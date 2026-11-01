@@ -627,6 +627,7 @@ pub(crate) async fn finish_add_inner(
     // anything is fetched.
     let child = state.aria2.tell_status(&child_gid).await?;
     let paused = child.status == Status::Paused;
+    let name = child.display_name().to_string();
     let files = child.files;
     if files.is_empty() {
         return Err(AppError::Upstream(
@@ -647,6 +648,14 @@ pub(crate) async fn finish_add_inner(
             tracing::warn!(gid = %child_gid, error = %e, "add: could not remove an all-garbage torrent");
         }
         let _ = state.aria2.remove_download_result(&child_gid).await;
+        // No row is left to carry the reason, so it is announced like any
+        // other failed download.
+        crate::notify::failed(
+            state,
+            &name,
+            "every file is garbage, so it was not downloaded",
+        )
+        .await;
         return Err(AppError::BadRequest(
             "every file in this torrent is garbage, so it was removed".to_string(),
         ));
