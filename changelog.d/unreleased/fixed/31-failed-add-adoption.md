@@ -1,0 +1,1 @@
+- **A failed add no longer downloads the whole torrent.** Recovery narrows a download before releasing it, and a torrent with nothing worth keeping is removed.
