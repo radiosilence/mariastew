@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.3.1
+
+### Security
+
+- **Telegram bot token no longer logged.** A failed notification logged the request URL, which carries the token.
+- **Login flows are bounded.** Each request to the public login route stored state that was only removed when that login completed; the store is now capped and swept.
+
+### Changed
+
+- **Cheaper polling.** aria2 is sampled in one round trip without the fields nothing reads, and paused downloads are no longer re-checked every tick.
+- **Datastar 1.0.4, bundled.** The page loads one script instead of two, and picks up Datastar's fixes for request-cancellation races.
+- **Requests no longer carry the page's local state.** Datastar signals are prefixed so they stay in the browser, which keeps the stream's reconnect URL from growing with every row shown.
+
+### Fixed
+
+- **Deploys shut down promptly.** SIGTERM is handled, and open pages reconnect to the new pod within a second instead of holding the old one until it is killed.
+- **Notifications cannot hang.** Outbound HTTP has a timeout, so one Telegram request that never answers no longer stops every later notification.
+- **Recently finished downloads no longer vanish.** The stopped list was read from its oldest end, so once enough results had built up, new ones were not shown, announced or swept.
+- **Cancelling never deletes what was in the library first.** Files already at a torrent's paths before it started are recorded and kept; only what the torrent wrote goes, with its control file and the folders it leaves empty.
+- **The garbage sweep stays inside the torrent.** A release added into an existing folder no longer has that folder's own artwork and metadata deleted when it finishes.
+- **Open pages say when aria2 stops answering.** The list used to freeze where it was until a reload; it is now replaced by the warning and restored when aria2 is back.
+- **The piece count reads once.** It said "pieces" twice.
+- **Deploys cannot pair new markup with an old stylesheet.** Assets carry cache headers: the hashed script is cached for good, everything else is revalidated.
+- **A failed add no longer downloads the whole torrent.** Recovery narrows a download before releasing it, and a torrent with nothing worth keeping is removed.
+- **aria2's stopped list no longer grows with every add.** The resolved magnet's own result is discarded once the real download exists.
+
+### Internal
+
+- **CI checks the frontend.** A web job lints, formats and typechecks the TypeScript and fails when the committed stylesheet or script no longer match their sources; frontend dev dependencies are on their latest releases.
+- **Fewer dependencies.** Unused crates are dropped and tokio compiles only the features the service uses.
+- **Builds use the latest stable Rust.** mise installs `rust` at `latest`; release builds use `stable` and `Dockerfile.dev` uses `rust:alpine`, rather than 1.97.
+
 ## 0.3.0
 
 ### Security
