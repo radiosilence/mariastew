@@ -1,0 +1,1 @@
+- **Comments and docs describe the current code.** Issue numbers and accounts of earlier behaviour are gone from comments; the README route table, the finished button's name and the local development commands match the code, and `mise run dev` and `mise run dev:mock` now exist.

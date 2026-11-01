@@ -174,12 +174,10 @@ pub async fn page(State(state): State<AppState>) -> AppResult<Html<String>> {
 /// one it never saw still has to reach it.
 ///
 /// `None` for `sent` is a connection that has sent nothing yet, and it always
-/// asks for the container. That was already what happened for every list with
-/// a row in it, since no row had been sent; an empty one took the other branch
-/// and sent nothing at all, which left a page rendered while aria2 was down
-/// showing its warning until someone reloaded. The container `#downloads` now
-/// carries that warning, so replacing it once per connection is what retires
-/// it — and a stream's first tick agreeing with the server costs one message.
+/// asks for the container, even for an empty list. The container `#downloads`
+/// carries the warning a page rendered while aria2 was down shows, so
+/// replacing it once per connection is what retires that warning, and a
+/// stream's first tick agreeing with the server costs one message.
 fn unsent<'a>(
     sent: &mut Option<Vec<(String, u64)>>,
     rows: &'a [RenderedRow],
@@ -201,7 +199,7 @@ fn unsent<'a>(
 
 /// One long-lived stream per page, fed by the process-wide poller rather than
 /// by a poll of its own — which is what lets the rate be a rate anyone would
-/// call smooth, since a second tab no longer doubles what aria2 is asked.
+/// call smooth, since a second tab does not double what aria2 is asked.
 ///
 /// It sends rows, not the list. Every snapshot arrives with each row already
 /// rendered and hashed, and this compares those hashes against what it last
@@ -353,13 +351,9 @@ enum Refused {
 /// back: its fetch wrapper returns early on `status !== 200`, ahead of the
 /// content-type sniffing that turns a JSON body into a signal patch. So a 400
 /// carrying a perfectly good explanation is, to the person who pressed the
-/// button, indistinguishable from the button doing nothing — which is exactly
-/// what it looked like.
+/// button, indistinguishable from the button doing nothing.
 ///
-/// The outcome therefore travels in the body and the status stays 200. What
-/// the status code no longer carries, the server log does: a rejected add is
-/// still a warning here, so this is a change to what the browser is told, not
-/// to what we can see.
+/// The outcome therefore travels in the body and the status stays 200.
 ///
 /// An error also names the magnets that did go in, as `_addDone`, so the sheet
 /// can drop their rows and leave only what still needs attention. Sending the
@@ -407,10 +401,9 @@ fn refused_message(total: usize, refused: &[Refused]) -> String {
 
 /// Validates every row, then starts each magnet's metadata pass and hands the
 /// rest to the background — resolving a magnet's metadata can take real time,
-/// and the browser does not hold a `POST` open for it (production:
-/// `NS_BINDING_ABORTED` around two seconds, followed by a retry that collided
-/// with the still-registered infohash from the abandoned first attempt).
-/// `addUri` itself is not what was slow: aria2 answers with a gid immediately
+/// and a browser aborts a `POST` held open for seconds, after which a retry
+/// would collide with the infohash the abandoned attempt left registered.
+/// `addUri` itself is quick: aria2 answers with a gid immediately
 /// and resolves the magnet on its own side afterward, so it is safe to run
 /// synchronously, once per magnet, and is what makes the already-registered
 /// case below a real answer rather than something only the background task
@@ -485,12 +478,11 @@ async fn start_add(state: &AppState, sub: &str, magnet: &str, dir: &str) -> Resu
         .await
     {
         Ok(gid) => gid,
-        // Not a server fault: this infohash is already known to aria2,
-        // either genuinely downloading already or a metadata pass a previous
-        // attempt left registered — the pod dying mid-`add` being the likely
-        // way, now that finishing it runs detached from the request that
-        // started it. aria2's error does not say which, and guessing wrong
-        // is worse than asking: forcibly clearing it here could silently
+        // Not a server fault: this infohash is already known to aria2, either
+        // genuinely downloading already or a metadata pass a previous attempt
+        // left registered, most likely by the pod dying while the detached
+        // finish was running. aria2's error does not say which, and guessing
+        // wrong is worse than asking: forcibly clearing it here could silently
         // cancel a real download. The download list is already on the page —
         // that is where "which one is it" gets answered.
         Err(AppError::Upstream(msg)) if is_already_registered(&msg) => {
@@ -560,14 +552,12 @@ const RESOLVE_TIMEOUT: Duration = Duration::from_secs(600);
 /// `addUri` for the same magnet.
 ///
 /// A magnet's own `files` describes the resolving gid itself — one entry,
-/// regardless of how many files the torrent actually has, which is why a
-/// three-file torrent used to log `magnet_files=1` and select whichever file
-/// happened to sit at index 1. `follow-torrent` (`mem`) spawns a second
-/// download from the resolved metadata and links the two by gid —
-/// `followedBy` on this one, `following` on that one — and it is that second
-/// gid's `files` that lists what the torrent actually contains. Reading the
-/// selection from anywhere else means the filter never sees most of the
-/// torrent and the choice of what to keep is decided by file order.
+/// regardless of how many files the torrent actually has. `follow-torrent`
+/// (`mem`) spawns a second download from the resolved metadata and links the
+/// two by gid — `followedBy` on this one, `following` on that one — and it is
+/// that second gid's `files` that lists what the torrent actually contains.
+/// Reading the selection from anywhere else means the filter never sees most of
+/// the torrent and the choice of what to keep is decided by file order.
 ///
 /// Applying the selection through `changeOption` rather than a second
 /// `addUri` also means there is no infohash collision to resolve: one
@@ -983,8 +973,8 @@ async fn clear(state: &AppState, gid: &str, status: &Download) -> bool {
 /// The response is held until aria2 has actually let go, so the button's own
 /// loading state is the wait rather than a guess at it, and a removal that does
 /// not take answers with a status instead of a silent 204 over a row that is
-/// still there. That is affordable now only because the stop is `forceRemove`:
-/// the graceful one waited on the swarm, which is the open-ended wait
+/// still there. Holding it is affordable because the stop is `forceRemove`; a
+/// graceful `remove` waits on the swarm, which is the open-ended wait
 /// `finish_add` is detached for.
 ///
 /// `clear` runs in a task that is then awaited rather than inline. A browser
@@ -1764,12 +1754,11 @@ mod tests {
             );
         }
 
-        /// The bug this whole task exists to fix: `add` used to hold the
-        /// connection open for as long as the metadata poll took — up to 60s
-        /// — which the browser does not wait for. Here the metadata never
-        /// resolves at all, and `add` still has to return well inside a
-        /// fraction of a second, because the only thing standing between the
-        /// caller and a response is one `addUri` round trip.
+        /// The metadata poll can take up to 60s, which the browser does not
+        /// wait for. Here the metadata never resolves at all, and `add` still
+        /// has to return well inside a second, because the only thing
+        /// standing between the caller and a response is one `addUri` round
+        /// trip.
         #[tokio::test]
         async fn add_returns_before_the_metadata_poll_completes() {
             let mock = mock_server(
@@ -1796,23 +1785,20 @@ mod tests {
             assert_eq!(response.status(), StatusCode::OK);
         }
 
-        /// The bug this whole task exists to fix: the file list used to be
-        /// read from the metadata gid's own `files` (always one entry,
-        /// itself), not the download `follow-torrent` spawned from it. A
-        /// three-file torrent where the video is *not* index 1 is exactly
-        /// the case that got the selection wrong: `magnet_files=1` regardless
-        /// of the torrent's real shape, and whichever file happened to sit at
-        /// index 1 was what got selected — the video only by luck.
+        /// The file list comes from the download `follow-torrent` spawned,
+        /// not the metadata gid's own `files` (always one entry, itself). A
+        /// three-file torrent where the video is *not* index 1 is the case
+        /// that tells the two apart: read from the metadata gid, whichever
+        /// file sits at index 1 would be selected.
         #[tokio::test]
         async fn finish_add_reads_the_selection_from_the_followed_downloads_file_list() {
-            // The shape of the second live failure: a multi-file release
-            // with the video at index 2 (not 1) and a nested `Other/`
-            // subdirectory — a torrent's `files` list has no directory
-            // entries of its own, only full paths, so `Other/...` shows up
-            // exactly like any other nested path. Index 1 and the `Other/`
-            // entry are unambiguous `filter::is_garbage` matches (`.nfo`,
-            // `.jpg`); a selection computed from the wrong file list (the
-            // metadata gid's own, always length 1) could only ever have
+            // A multi-file release with the video at index 2 (not 1) and a
+            // nested `Other/` subdirectory — a torrent's `files` list has no
+            // directory entries of its own, only full paths, so `Other/...`
+            // shows up exactly like any other nested path. Index 1 and the
+            // `Other/` entry are unambiguous `filter::is_garbage` matches
+            // (`.nfo`, `.jpg`); a selection computed from the wrong file list
+            // (the metadata gid's own, always length 1) could only ever have
             // picked the right one by coincidence.
             let child_files = serde_json::json!([
                 {"index": "1", "path": "/mnt/kontent/movies/Nightfall Harbour (1994) [1080p]/PACKGRP.nfo", "length": "473", "selected": "true"},
@@ -1861,7 +1847,7 @@ mod tests {
         /// magnet, and that gid leaves every list this UI reads the moment
         /// the real download exists. Without the link in `finish_add_inner`
         /// the only row left on screen would have no history at all — which
-        /// is the half of #298 that a per-torrent log panel exists for.
+        /// is what a per-torrent log panel exists for.
         #[tokio::test]
         async fn the_history_of_an_add_follows_the_download_it_produced() {
             let child_files = serde_json::json!([
@@ -2407,12 +2393,10 @@ mod tests {
             false
         }
 
-        /// The bug behind #316. aria2 refuses `remove` for a download it has
-        /// already stopped — every errored row, and any finished torrent it is
-        /// no longer seeding — so the handler failed on the first call and
-        /// never reached `removeDownloadResult`, which would have worked. The
-        /// row stayed, the press showed nothing, and the next press failed
-        /// identically.
+        /// aria2 refuses `remove` for a download it has already stopped:
+        /// every errored row, and any finished torrent it is no longer
+        /// seeding. Failing on that call would never reach
+        /// `removeDownloadResult`, which works, and the row would stay.
         #[tokio::test]
         async fn a_download_aria2_has_already_stopped_is_still_discarded() {
             for status in ["complete", "error"] {
@@ -2498,9 +2482,9 @@ mod tests {
             );
         }
 
-        /// A removal that does not take is a row that is still there, and
-        /// answering 204 over it is the silence #354 was about. The mark comes
-        /// off either way — the controls it hid have to come back.
+        /// A removal that does not take leaves the row in place, and a 204
+        /// would report success over it. The mark comes off either way, because
+        /// the controls it hid have to come back.
         #[tokio::test]
         async fn a_removal_aria2_refuses_answers_with_an_error_and_hands_the_row_back() {
             let mock = mock_server("active", u32::MAX).await;

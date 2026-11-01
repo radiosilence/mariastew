@@ -21,8 +21,8 @@ pub struct DirView {
     pub path: String,
 }
 
-/// A deselected file is listed, not hidden — the filter's decisions were
-/// previously visible only in logs.
+/// A deselected file is listed, not hidden, so the filter's decisions are
+/// visible on the page.
 pub struct FileView {
     pub name: String,
     pub size: String,
@@ -96,23 +96,20 @@ pub struct Row {
 ///
 /// The words are the ones a person would use about a download, not the ones
 /// the enum uses about a swarm. `Health::Moving` naming itself "moving" on
-/// screen was the giveaway: it is precise about traffic and meaningless to
-/// whoever is waiting for a film. Each state now says either what is
-/// happening or what is wrong, in the terms of the thing being waited for.
+/// screen would be precise about traffic and meaningless to whoever is
+/// waiting for a film. Each state says either what is happening or what is
+/// wrong, in the terms of the thing being waited for.
 ///
 /// `Complete` says "downloaded" rather than "ready" for that reason. "Ready"
 /// names a state of the app — something prepared, waiting to be started — when
 /// what it is reporting is that the file has arrived.
 ///
-/// "starting" used to answer for everything between pasting a magnet and the
-/// first byte, which is where a download spends the time someone actually
-/// spends wondering about it: an unresolved magnet, one queued behind
-/// `maxConcurrentDownloads`, and a resumed one being hash-checked all said it.
-/// The last two are not even the same *kind* of waiting, and both were being
-/// diagnosed as a dead swarm further down this match, so each now says which
-/// it is. What is deliberately *not* split is the resolving magnet itself —
-/// see the note on `Health::Resolving` for the reading that turned out to
-/// mean nothing.
+/// Between pasting a magnet and the first byte is where a download spends the
+/// time someone spends wondering about it, so an unresolved magnet, one queued
+/// behind `maxConcurrentDownloads`, and a resumed one being hash-checked each
+/// say which they are. None of them is a dead swarm. What is deliberately
+/// *not* split is the resolving magnet itself; see the note on
+/// `Health::Resolving`.
 fn bar_class_and_state(health: Health) -> (&'static str, &'static str) {
     match health {
         Health::Moving => ("progress-success", "downloading"),
@@ -443,10 +440,9 @@ mod tests {
     /// The breakout the picker has to keep stopping: a directory the owner
     /// can create, named so that it closes whatever it is pasted into.
     ///
-    /// It used to be pasted into a per-row Datastar expression, where HTML
-    /// escaping was no defence — the browser turns `&#x27;` back into a quote
-    /// before the expression is parsed — so the name was percent-encoded into
-    /// a URL instead. With one delegated handler the name travels as an
+    /// Inside a Datastar expression HTML escaping would be no defence, since
+    /// the browser turns `&#x27;` back into a quote before the expression is
+    /// parsed. With one delegated handler the name travels as an
     /// ordinary attribute value that nothing evaluates, and Askama's escaping
     /// is the whole defence. This asserts the property rather than either
     /// mechanism: the hostile name must not appear raw, and no `data-on:`
@@ -559,11 +555,11 @@ mod tests {
         );
     }
 
-    /// "starting" used to answer for all three of these. Each has a different
-    /// answer to "should I wait or fix this", which is the whole reason the
-    /// state is a word rather than just a colour.
+    /// Each of these has a different answer to "should I wait or fix this",
+    /// which is the whole reason the state is a word rather than just a
+    /// colour.
     #[test]
-    fn the_states_that_replaced_starting_each_say_which_one_they_are() {
+    fn the_waiting_states_each_say_which_one_they_are() {
         assert_eq!(
             bar_class_and_state(Health::Resolving),
             ("progress-info", "finding peers")
@@ -899,14 +895,14 @@ mod tests {
         );
     }
 
-    /// The current path is the answer to "where will this land" (#257) — an
+    /// The current path is the answer to "where will this land", and an
     /// end-ellipsis on a full path tends to hide the last segment, which is
     /// the one part of it that answers that question. It wraps for the same
     /// reason the directory rows do, and `min-w-0` is load-bearing: without
     /// it a flex item will not shrink to wrap at all, it will just overflow
     /// its row instead.
     ///
-    /// It is the label that is shown, not the path (#303): the mount point
+    /// It is the label that is shown, not the path: the mount point
     /// above the root is the same on every destination, so it distinguishes
     /// nothing while costing the line the width the tail needs. The absolute
     /// path is still in the markup — the hidden inputs submit it — so this
@@ -1064,7 +1060,7 @@ mod tests {
         .render()
         .unwrap();
         // The dialog's own cap is `.sheet` in styles/app.css rather than a
-        // utility here — see #353 — so the class is all a rendered template
+        // utility here, so the class is all a rendered template
         // can be asked about. What it opts into is not visible from Rust.
         assert!(
             page.contains(r#"class="sheet "#),
@@ -1108,7 +1104,7 @@ mod tests {
     }
 
     /// The one thing worth seeing the instant the dialog opens is the
-    /// magnet field — the destination matters (#257) but is a second
+    /// magnet field. The destination matters but is a second
     /// decision, not the first one, so it starts folded away rather than
     /// dumping a directory tree in front of an empty paste field. Neither
     /// `<details>` carries `open`: Askama has no way to emit a boolean
@@ -1205,7 +1201,7 @@ mod tests {
         );
         assert!(
             !browse.contains("data-class:opacity-50"),
-            "the old dim-the-stale-list treatment is still applied: {browse}"
+            "the stale listing is dimmed: {browse}"
         );
     }
 
@@ -1293,8 +1289,8 @@ mod tests {
 
     /// The dialog going away is the confirmation, and the row behind it is the
     /// receipt — a magnet's metadata pass is on screen from the moment it is
-    /// accepted (#362), so a banner saying it "will show up shortly" was
-    /// covering the thing it described.
+    /// accepted, so a banner saying it "will show up shortly" would cover the
+    /// thing it described.
     #[test]
     fn a_successful_add_closes_the_dialog_and_shows_no_banner() {
         let page = Page {
@@ -1400,9 +1396,8 @@ mod tests {
         }
     }
 
-    /// A finished row used to look exactly like every other row except for
-    /// a word in an outlined badge — easy to miss in a list being scanned
-    /// quickly. Filled and checked is the one state meant to pop.
+    /// A word in an outlined badge is easy to miss in a list being scanned
+    /// quickly, so filled and checked is the one state meant to pop.
     #[test]
     fn a_finished_row_gets_a_filled_badge_and_the_rest_do_not() {
         let finished = render(&Download {
@@ -1414,10 +1409,9 @@ mod tests {
         assert!(!render(&moving()).contains("badge-success"));
     }
 
-    /// #372: the metadata pass reaches `Complete` when the *torrent file*
-    /// arrives, so for a second the row went green, said "downloaded" beside
-    /// the torrent's name, and showed a full bar — and then the download
-    /// started. The marker comes off the name because it is not worth
+    /// The metadata pass reaches `Complete` when the *torrent file* arrives,
+    /// which must not turn the row green, say "downloaded" beside the
+    /// torrent's name, or show a full bar. The marker comes off the name because it is not worth
     /// reading; nothing else about the row is allowed to claim the torrent
     /// arrived with it.
     #[test]
@@ -1440,8 +1434,7 @@ mod tests {
     /// A finished torrent is one press from being out of the list, and the
     /// press keeps every file — so the button says so and is coloured like the
     /// badge beside it, rather than reading as the quiet sibling of the
-    /// destructive one it shares a slot with. #354: "Done" said neither which
-    /// of those two it was nor that it did anything to the list at all.
+    /// destructive one it shares a slot with.
     #[test]
     fn a_finished_row_offers_clear_and_an_unfinished_one_offers_the_destructive_button() {
         let finished = render(&Download {
@@ -1456,7 +1449,7 @@ mod tests {
         assert!(unfinished.contains("Cancel &#38; delete"), "{unfinished}");
     }
 
-    /// #354: every control that changes something on the server says the press
+    /// Every control that changes something on the server says the press
     /// landed, without waiting for a snapshot to come back and say it. The
     /// signal is per row and per slot — one shared name would have a press on
     /// one row spinning a button on another.
@@ -1527,11 +1520,9 @@ mod tests {
         }
     }
 
-    /// #316: the press had nothing to show for itself. aria2 takes a moment to
-    /// let go and the list is redrawn from aria2 once a second, so a row being
-    /// removed kept reading "downloaded" beside a button that could be pressed
-    /// again — which is what "it does nothing" was. Every control goes and the
-    /// state says what is happening.
+    /// aria2 takes a moment to let go, and without its own state a row being
+    /// removed would keep reading "downloaded" beside a button that could be
+    /// pressed again. Every control goes and the state says what is happening.
     #[test]
     fn a_row_being_cleared_says_so_and_offers_nothing_to_press() {
         let seeding = Download {
@@ -1562,9 +1553,9 @@ mod tests {
         page[start..end].to_string()
     }
 
-    /// #308: the two numbers that answer "will this be done tonight" were a
-    /// tap away, behind the same disclosure as the piece size and the
-    /// infohash. They now sit on the destination's line without one.
+    /// The two numbers that answer "will this be done tonight" sit on the
+    /// destination's line rather than behind the disclosure with the piece
+    /// size and the infohash.
     #[test]
     fn the_collapsed_row_shows_the_rate_and_the_time_left() {
         // 512 MiB left at 1 MiB/s.
@@ -1591,9 +1582,9 @@ mod tests {
         assert!(page.contains("—"), "the readings lost their dash: {page}");
     }
 
-    /// The destination shares its line now, and a flex child will not shrink
-    /// to wrap without `min-w-0` — it overflows the row instead, which is the
-    /// bug this markup exists to avoid (see the picker's own path, #257).
+    /// The destination shares its line, and a flex child will not shrink to
+    /// wrap without `min-w-0`; it overflows the row instead (as the picker's
+    /// own path would).
     #[test]
     fn the_destination_can_still_shrink_and_wrap_beside_the_rate() {
         let summary = summary(&render(&Download {
@@ -1618,10 +1609,8 @@ mod tests {
         assert!(page.contains("/mnt/kontent/tv/Show/S01"));
     }
 
-    /// The ticket's first half (#298): a row that had nothing to say about
-    /// itself beyond a percentage. These are the readings that answer "how
-    /// long", "is it giving anything back", and "how is aria2 cutting this
-    /// up" — none of which reached the page before.
+    /// The readings that answer "how long", "is it giving anything back", and
+    /// "how is aria2 cutting this up", which a percentage cannot.
     #[test]
     fn the_expanded_row_carries_the_readings_a_percentage_cannot() {
         let page = render(&Download {
@@ -1739,9 +1728,8 @@ mod tests {
         assert!(page.contains("and 16 more"), "{page}");
     }
 
-    /// The ticket's second half (#298): a panel, per torrent, of what
-    /// actually happened to it. Every line here was previously only in the
-    /// pod's log.
+    /// A panel, per torrent, of what happened to it, so it can be read
+    /// without the pod's log.
     #[test]
     fn the_log_panel_lists_a_downloads_history_newest_last() {
         let at =

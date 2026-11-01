@@ -34,7 +34,7 @@ const SHAPED_MOVIES = [
   "Driftwood (2001) [1080p] [LOFT.AG]",
 ];
 
-// Divergent spellings hard to tell apart (#257).
+// Divergent spellings of one show, hard to tell apart in the picker.
 const DIVERGENT_SPELLINGS = ["Show Name S02", "Show.Name.Season.2"];
 
 const SHOWS: Record<string, string[]> = {

@@ -184,10 +184,10 @@
 
 /* Where the bottom sheet is, stated rather than nudged.
    `dialog:modal` arrives from the user agent as `width: fit-content`,
-   `margin: auto` and `max-width: calc(100% - 6px - 2em)`, so the margin
-   utilities that used to sit here asked for the full width, got 38px less
-   than it, and — with the margin pinned to zero on one side — put the whole
-   shortfall on the other: the sheet in the corner of #353. An author rule
+   `margin: auto` and `max-width: calc(100% - 6px - 2em)`, so margin
+   utilities asking for the full width get 38px less than it, and with the
+   margin pinned to zero on one side the whole shortfall lands on the other,
+   pushing the sheet into a corner. An author rule
    beats the user agent's whatever its specificity, so saying the insets once
    leaves nothing for the two to disagree about.
 

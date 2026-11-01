@@ -90,10 +90,10 @@ files, and `/auth/*` are the only routes outside that layer (`src/main.rs`).
 |---|---|---|
 | `/` | GET | The page: current roots and the download list |
 | `/stream` | GET | SSE stream, patching rows in place at the poll rate. see [docs/design.md](docs/design.md) |
-| `/add` | POST | `magnet` + `dir` form fields — validates and starts the magnet resolving, then returns `202` immediately; the poll, the filter, and applying the selection run detached (see `routes::finish_add`), and their outcome shows up through `/stream` like any other download |
+| `/add` | POST | `magnet` (repeatable) + `dir` form fields. Always answers `200` with the outcome as Datastar signals (`_addStatus`, `_addMessage`, `_addDone`), because Datastar ignores a non-200 body; each accepted magnet's resolve and file selection run detached (`routes::finish_add`) and show up through `/stream` like any other download |
 | `/downloads/{gid}/pause` | POST | |
 | `/downloads/{gid}/resume` | POST | |
-| `/downloads/{gid}/remove` | POST | Marks the row `clearing` and returns `204` immediately; the removal itself runs detached (`routes::clear`) and its outcome shows up through `/stream`. see [docs/design.md](docs/design.md) |
+| `/downloads/{gid}/remove` | POST | Marks the row `clearing`, which every open page sees through `/stream`, and answers `204` once aria2 has let go of it (at once if a removal is already in flight), or an error if it never does. see [docs/design.md](docs/design.md) |
 | `/browse` | GET | `path` query param — lists subdirectories of a configured root, for the destination picker |
 | `/mkdir` | POST | `parent` + `name` form fields — makes a directory and returns the picker rooted there |
 | `/healthz` | GET | Kubelet probe, no auth |

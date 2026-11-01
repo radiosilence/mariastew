@@ -33,7 +33,7 @@
      it for good; and a socket can simply stop carrying bytes, which is what a
      suspended phone hands back, and which Datastar cannot see at all — it still
      believes the request is live. Its own belief is therefore the one thing
-     this must not consult (#386, #390).
+     this must not consult.
 
      `data-on-interval` is the mechanism: the server sends a heartbeat on a
      cadence (`routes::HEARTBEAT`), `ms.streamEvent` records every frame that
@@ -96,9 +96,8 @@
 
      Nothing is reset here: closing is what clears an abandoned attempt, and
      that is the one event every dismissal raises. #}
-{# A border rather than the shadow it used to cast: the theme is flat, and on
-     a dark surface a small drop shadow is invisible anyway — it was drawing a
-     separation the eye could not see. #}
+{# A border rather than a shadow: the theme is flat, and on a dark surface a
+     small drop shadow is invisible anyway. #}
 <header class="bg-base-100 border-b border-base-300 p-4">
   <button type="button" class="btn btn-primary btn-lg min-h-14 w-full"
     aria-label="Add download" title="Add download"
@@ -108,14 +107,14 @@
 {# A bottom sheet, not a centered dialog: pinned to the bottom edge, which is
      where a thumb already is and where the rest of this UI's controls live.
      `closedby="any"` is a tap-outside dismiss with
-     no JS — see #257. The one field that matters, the magnet paste, is the
+     no JS. The one field that matters, the magnet paste, is the
      first and only thing shown open; the destination is real but secondary,
      so it starts collapsed behind its own disclosure rather than dumping a
      directory tree in front of someone who has not pasted anything yet.
      Its geometry — the insets, the width, the height cap and the room the
      keyboard needs — is `.sheet` in the stylesheet rather than utilities
      here, because the user agent has rules of its own about all four and
-     an author rule wins outright where a margin utility only argues (#353). #}
+     an author rule wins outright where a margin utility only argues. #}
 {# It closes itself off `$_addStatus` rather than off the fetch, so it does not
      care whether the answer came back as a plain JSON body or an SSE patch.
 
@@ -127,11 +126,9 @@
      `method="dialog"`, `closedby="any"`, and Escape alike. Re-fetching the
      picker with no path returns it to the roots.
 
-     `$_addStatus` is cleared whatever it held. A success used to be left set for
-     the toast to keep reading, which made the toast the only thing that ever
-     cleared it — an `ok` that outlives this dialog is one the next `data-effect`
-     run closes it on. Nothing outside reads it now, so it dies with the
-     attempt. #}
+     `$_addStatus` is cleared whatever it held: an `ok` that outlives this
+     dialog is one the next `data-effect` run closes it on. Nothing outside the
+     dialog reads it, so it dies with the attempt. #}
 <dialog id="add-dialog" closedby="any" data-ref="_addDialog"
   data-effect="if ($_addStatus === 'ok') el.close(); else if ($_addStatus === 'error') ms.dropMagnets($_magnetRows, $_addDone)"
   data-on:close="$_addStatus = ''; $_addMessage = ''; ms.resetMagnets($_magnetRows); @get('/browse')"
@@ -149,17 +146,16 @@
        what is in it up to a cap — and `flex-1` is `flex-basis: 0`, which in a
        column with no definite height means this contributes nothing to the
        height being worked out. Paired with the `min-h-0` that lets it scroll,
-       that is a form measured at zero and a footer sitting on the field: the
-       squashed sheet of #353, which survived the geometry fix because it was
-       never the geometry. `flex-auto` bases the same growing and shrinking on
+       that is a form measured at zero and a footer sitting on the field.
+       `flex-auto` bases the same growing and shrinking on
        the content instead. #}
   <form id="add-form" tabindex="-1" autofocus
     class="flex min-h-0 flex-auto flex-col gap-4 overflow-y-auto overscroll-contain p-4 sm:p-6 focus:outline-none">
     {# A magnet is a URI and nothing else, so it gets the URI keyboard and none
-         of the text-field helpers: iOS otherwise offered to AutoFill a contact
-         into it, spending a bar of a viewport the keyboard had already
-         halved, and autocapitalise/autocorrect can only corrupt what is typed
-         (#353).
+         of the text-field helpers: iOS otherwise offers to AutoFill a contact
+         into it, spending a bar of a viewport the keyboard has already
+         halved, and autocapitalise/autocorrect can only corrupt what is
+         typed.
 
          Not what takes focus on open — see the form above. A keyboard on
          every open costs half the sheet, and the field is filled by the
@@ -206,19 +202,17 @@
        `#add-form` they are nested inside — `form=` on each of them says so,
        which is the one thing that overrides where an input sits in the DOM.
 
-       Without it, creating a folder was impossible until a magnet had been
-       pasted: Datastar walks up from the button to the nearest form, and
+       Without it, creating a folder would be impossible until a magnet had
+       been pasted: Datastar walks up from the button to the nearest form, and
        refuses to send one that fails `checkValidity()`, so a constraint on
-       the magnet field two elements above rejected a request that never
-       carried it. A control validating a form it has nothing to do with is
-       the bug; giving it the form it does have to do with is the fix. It also
-       stops a create-folder posting the magnet, which the handler ignored. #}
+       the magnet field two elements above would reject a request that never
+       carries it. It also keeps a create-folder from posting the magnet. #}
   <form id="mkdir-form" hidden></form>
 
-  {# A 400 (magnets only, destination outside a root, magnet never resolved)
-       used to do nothing visible at all — indistinguishable from the dialog
-       just not working. Same contract as success, so it needs nothing from the
-       server beyond the message it already computed for the plain-text body.
+  {# A refused add (magnets only, destination outside a root, magnet never
+       resolved) has to show something, or it is indistinguishable from the
+       dialog not working. Same contract as success, so it needs nothing from
+       the server beyond the message.
 
        The icon is a sibling of the message, not inside it: `data-text` replaces
        the element's whole content, so anything nested in the same element is
@@ -233,8 +227,8 @@
 
        `shrink-0` on this and on the error above it: they are flex items beside
        a `flex-1` form, so they shrink by default, and a sheet short of room —
-       every sheet, while the keyboard was taking most of it — squeezed the
-       footer into the field rather than scrolling the form (#353). #}
+       every sheet, while the keyboard takes most of it — would squeeze the
+       footer into the field rather than scroll the form. #}
   <div class="flex shrink-0 gap-2 border-t border-base-300 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
     <form method="dialog" class="flex-1">
       <button class="btn btn-ghost min-h-12 w-full">Cancel</button>

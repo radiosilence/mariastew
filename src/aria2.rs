@@ -103,19 +103,16 @@ impl FromStr for Status {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Health {
     /// Behind `maxConcurrentDownloads`. Nothing is wrong and nothing is
-    /// happening — which is the one thing the old catch-all could not say,
-    /// so a queued torrent read as "no seeders" and looked broken.
+    /// happening, which "no seeders" would wrongly suggest.
     Queued,
     /// The magnet has not resolved: aria2 is looking for peers who will serve
     /// the torrent file, and asking whichever it finds.
     ///
-    /// This was briefly split in two on `connections > 0`, on the theory that
-    /// peers connected meant metadata was on its way. Watching a real dead
-    /// magnet disproved it — DHT hands out peers that have never heard of the
-    /// infohash, so the count oscillates between zero and a handful every few
-    /// seconds while nothing whatsoever arrives. The split named that
-    /// oscillation "progress", and flapped the badge and the activity log
-    /// along with it. Nothing in a single `tellStatus` separates a magnet
+    /// It is not split on `connections > 0`: DHT hands out peers that have
+    /// never heard of the infohash, so on a dead magnet the count oscillates
+    /// between zero and a handful every few seconds while nothing arrives,
+    /// and a split would flap the badge and the activity log with it.
+    /// Nothing in a single `tellStatus` separates a magnet
     /// nobody has from one that is merely slow; what separates them is how
     /// long it has been, which is what the timestamps in the log are for.
     Resolving,
@@ -1024,11 +1021,10 @@ mod tests {
         assert_eq!(d.health(), Health::Verifying);
     }
 
-    /// The case the check matters most in, and the one it used to answer for
-    /// last. aria2 counts every piece in the control file as complete before
-    /// it starts hashing them, so a restored seeding torrent reads as fully
-    /// downloaded for the whole check — and `is_finished` above said
-    /// "downloaded" through the longest wait a deploy has.
+    /// The case the check matters most in. aria2 counts every piece in the
+    /// control file as complete before it starts hashing them, so a restored
+    /// seeding torrent reads as fully downloaded for the whole check, which is
+    /// the longest wait a deploy has.
     #[test]
     fn health_verifying_outranks_a_completion_aria2_has_not_rechecked_yet() {
         let mut d = download(Status::Active);
@@ -1171,8 +1167,8 @@ mod tests {
     /// a `select-file` selection, so `total_length`/`completed_length` stay
     /// the whole torrent's numbers even once every selected file has fully
     /// arrived. A 4K release with a finished film and two never-downloaded
-    /// deselected bytes-worth of junk would sit at "not finished" forever
-    /// under the old aggregate-only check.
+    /// deselected bytes-worth of junk would otherwise sit at "not finished"
+    /// forever.
     #[test]
     fn is_finished_when_every_selected_file_is_even_though_deselected_ones_are_not() {
         let mut d = download(Status::Active);
@@ -1243,13 +1239,11 @@ mod tests {
         d
     }
 
-    /// The dance in #372, in one assertion each. A metadata pass reaches
-    /// `Complete` when the torrent *file* arrives, and every reading below
-    /// was answering as though the torrent had: the badge went green and
-    /// said "downloaded", `notify`'s watcher — whose terminal test is this
-    /// same `is_finished` — sent Telegram a finished message and swept a
-    /// directory nothing had been written to, and then the real download
-    /// started, which is the part that was never in doubt.
+    /// A metadata pass reaches `Complete` when the torrent *file* arrives,
+    /// and none of the readings below may answer as though the torrent had:
+    /// the badge would go green and say "downloaded", and `notify`'s watcher,
+    /// whose terminal test is this same `is_finished`, would announce a
+    /// finished download and sweep a directory nothing had been written to.
     #[test]
     fn a_resolved_metadata_pass_is_not_a_finished_torrent() {
         let d = resolved_metadata_pass();
@@ -1279,8 +1273,8 @@ mod tests {
     }
 
     /// An unresolved magnet has a real download speed and no size to spend it
-    /// against, which used to divide out to "0s left" beside a torrent that
-    /// had not started.
+    /// against, so dividing one by the other would show "0s left" beside a
+    /// torrent that has not started.
     #[test]
     fn no_eta_before_the_size_is_known() {
         let mut d = download(Status::Active);

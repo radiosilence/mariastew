@@ -32,33 +32,29 @@ row.
 Expanding it answers "what is aria2 actually doing", which needs rather more
 than a percentage:
 
-- **The state is granular where the waiting happens.** "starting" used to
-  cover everything between pasting a magnet and the first byte, which is the
-  whole of the time anyone spends wondering. It is now *finding peers* (the
-  magnet has not resolved), *queued* (parked behind `maxConcurrentDownloads`
-  — previously diagnosed as "no seeders", which looks like a fault and is not
-  one), or *checking files* (aria2 is hashing data that was already on disk,
-  which reads as zero speed with peers connected and was otherwise
-  indistinguishable from stalled).
+- **The state is granular where the waiting happens.** Between pasting a
+  magnet and the first byte is the whole of the time anyone spends wondering,
+  so that stretch is *finding peers* (the magnet has not resolved), *queued*
+  (parked behind `maxConcurrentDownloads`, which "no seeders" would make look
+  like a fault), or *checking files* (aria2 is hashing data that was already
+  on disk, which reads as zero speed with peers connected and would otherwise
+  be indistinguishable from stalled).
 
-  *finding peers* is deliberately **not** split further on the connection
-  count. It was, briefly, on the theory that peers connected meant metadata
-  was on its way — and a real dead magnet disproved it: DHT hands out peers
-  that have never heard of the infohash, so the count oscillates between zero
-  and a handful every few seconds while nothing arrives, which flapped both
-  the badge and the activity log. Nothing in one `tellStatus` separates a
-  magnet nobody has from one that is merely slow. How long it has been does,
-  and that is what the log's timestamps answer.
+  *finding peers* is deliberately **not** split further on the connection count:
+  DHT hands out peers that have never heard of the infohash, so on a dead magnet
+  the count oscillates between zero and a handful every few seconds while
+  nothing arrives, and a split would flap both the badge and the activity log.
+  Nothing in one `tellStatus` separates a magnet nobody has from one that is
+  merely slow. How long it has been does, and that is what the log's timestamps
+  answer.
 
-  It also holds all the way through, which it did not: the metadata pass
-  reaches aria2's `Complete` the moment the *torrent file* arrives, and every
-  reading taken off its byte counters was answering about the wrong download.
-  For a second the row went green, said "downloaded" beside the torrent's
-  name, filled its bar and put "0s left" under it, Telegram announced a
-  finished download, `sweep_garbage` walked a directory nothing had been
-  written to — and then the torrent started downloading. A metadata pass now
-  measures nothing at all (`Download::display_totals`), so it renders as the
-  unknown it is: indeterminate bar, no size, no ETA, still *finding peers*.
+  It also holds through the metadata pass. That pass reaches aria2's
+  `Complete` the moment the *torrent file* arrives, so every reading taken off
+  its byte counters would describe the wrong download: a green row saying
+  "downloaded" with a full bar and "0s left", a Telegram announcement, and a
+  `sweep_garbage` of a directory nothing has been written to. A metadata pass
+  measures nothing (`Download::display_totals`), so it renders as the unknown
+  it is: indeterminate bar, no size, no ETA, still *finding peers*.
 - **Readings, not just a bar:** bytes done against total, up and down rates,
   bytes given back and the share ratio, peers against seeders, and the piece
   count and size — which is the explanation for both lumpy progress and for a
@@ -131,8 +127,8 @@ nothing that would ever start it.
 
 The option lives on the aria2 process, so the add does not assume it: the
 child's own status decides whether there is a pause to release, and an aria2
-started without it still works — with the old exposure, which is the sweep
-below's problem.
+started without it still works, leaving whatever it fetched before the
+selection landed to the sweep below.
 
 aria2 also downloads whole pieces regardless of selection, so a small
 deselected file sharing a piece boundary with a selected one can land anyway
@@ -308,12 +304,11 @@ down the scene garbage that was deselected.
 
 ### Restoring the magnet is not restoring the torrent
 
-What the session holds is the magnet, so restoring one used to hand the
-infohash back to the swarm and wait — for metadata already held, to resume
-bytes already on the disk. A well-seeded torrent answered in seconds and a
-sparse one never did, which is a resume whose reliability is a property of
-other people. The failure looked like nothing at all: the row said "finding
-peers" over a finished download and kept saying it.
+What the session holds is the magnet, so restoring one alone hands the
+infohash back to the swarm and waits — for metadata already held, to resume
+bytes already on the disk. A well-seeded torrent answers in seconds and a
+sparse one never does, which is a resume whose reliability is a property of
+other people, and the row says "finding peers" over a finished download.
 
 `--bt-save-metadata` writes the resolved torrent out, and
 `--bt-load-saved-metadata` reads it back before asking anyone, so a restart is
@@ -325,7 +320,7 @@ It is not in the torrent's file list, so `notify::sweep_garbage` never
 considers it, and it survives to be read.
 
 Anything added before this existed has no saved torrent and falls back to the
-swarm, which is the old behaviour rather than a new failure.
+swarm.
 
 ### An add is two steps, and a restart can land between them
 
@@ -378,12 +373,13 @@ is the property `--force-save` would otherwise put at risk.
 torrent is re-hashed before it resumes or seeds. That is a read of everything
 already on disk for each restored row, on a mechanical disk, on every deploy —
 the price of never trusting bytes nobody verified, and the reason to press
-**Done** on rows that are finished with rather than leaving them in the list.
+**Clear** on rows that are finished with rather than leaving them in the list.
 
 ### Saying so while it happens
 
-That read is the longest wait a deploy has, and the row used to report it as
-`downloaded` with a full still bar. aria2 counts every piece in the control
+That read is the longest wait a deploy has, and a row reading only
+`completedLength` would report it as `downloaded` with a full still bar.
+aria2 counts every piece in the control
 file as complete *before* it starts hashing them, so `completedLength` is
 already final for the whole check and only `verifiedLength` moves — sampled on
 a real restore, 57MB to 762MB in 1.4s on an SSD, and minutes on the disks this
@@ -423,9 +419,9 @@ every open page and the Telegram watcher read its snapshots through a
 the rate is a property of the process rather than of how many phones happen to
 have the page open.
 
-That is what makes it tunable at all. It used to be one interval, one set of
-three RPC calls and one render *per open stream* — so once a second was the
-honest ceiling, and a second tab doubled it. `POLL_MS` is now 100 by default;
+That is what makes it tunable at all: with one set of RPC calls and one
+render *per open stream*, a second tab would double the cost and once a second
+would be the honest ceiling. `POLL_MS` is 100 by default;
 turn it up rather than guessing, because the ceiling is whichever of aria2's
 CPU or the browser's morph gives first and which one that is depends on how
 many downloads are in the list. aria2 serialises the file list of every
@@ -503,7 +499,7 @@ half-downloaded episode sitting in the library is the mess this avoids, and
 what it may not delete is the previous section's subject — and
 on a finished one it only stops seeding, leaving the files in place: that is
 stopping an upload, not undoing a download, and deleting the episode would be
-astonishing. The finished button says **Done** rather than "stop seeding" —
+astonishing. The finished button says **Clear** rather than "stop seeding" —
 what it means to whoever presses it is that they are finished with the row,
 and it keeps every file, which is the opposite of what the destructive button
 in the same slot on an unfinished row does.
@@ -512,11 +508,10 @@ Removal is asynchronous on both sides. aria2 has two calls for it and each
 refuses the other's downloads: `remove` stops one that is still running,
 `removeDownloadResult` discards one that has already stopped — and a download
 does not move between those the instant it is asked, so the second call is
-refused for a moment after the first succeeds. Starting with `remove` and
-giving up when it failed is what made the button look dead: an errored row and
-a torrent aria2 had stopped seeding are both already-stopped, so the call that
-would have worked was never reached, and the row stayed with a button that
-could only fail again. `routes::clear` runs both in the order that applies and
+refused for a moment after the first succeeds. An errored row and a torrent
+aria2 has stopped seeding are both already-stopped, so starting with `remove`
+and giving up when it failed would never reach the call that works.
+`routes::clear` runs both in the order that applies and
 keeps asking until aria2 answers `tellStatus` for the gid with "not found",
 rather than trusting either call's return.
 
@@ -546,7 +541,7 @@ initial plan for this service assumed:
   context. The binaries compile on one native runner per architecture; only
   the image's `apk add` layer runs under QEMU for arm64, and the registry
   layer cache keeps it, since it depends on nothing of mariastew's. The cost
-  is that `Dockerfile` no longer builds on its own — it wants the binaries
+  is that `Dockerfile` does not build on its own — it wants the binaries
   beside it — which is why local iteration goes through `Dockerfile.dev`
   instead.
 - **The runtime base is `alpine`, not `scratch`.** It has to carry `aria2c`
