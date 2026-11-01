@@ -110,6 +110,10 @@ worth keeping from *that* download's own file list — not the resolving gid's,
 which always has exactly one entry, itself — and `aria2.changeOption` applies
 the selection to it.
 
+The resolving gid's own result is discarded once the real download exists.
+aria2 keeps every stopped result until told otherwise, and these would
+otherwise accumulate one per add in the list the poller reads.
+
 `--pause-metadata` is what makes that safe. aria2 creates the followed download
 already stopped, with its full file list readable, so the selection is in place
 before a single content byte arrives — measured against a real swarm, nothing

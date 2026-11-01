@@ -25,7 +25,7 @@ use std::sync::Arc;
 use std::{fs, path::Path};
 
 use axum::Router;
-use axum::http::header;
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
@@ -42,7 +42,7 @@ pub const APP_JS_PATH: &str = concat!("/assets/", env!("APP_JS_FILENAME"));
 
 /// Everything this page needs comes from this origin, so the policy says so.
 /// Nothing is fetched from a CDN and no handler is written into the markup —
-/// `app.js` and the vendored Datastar bundle are both served from here, and
+/// the script bundle, Datastar included, is served from here, and
 /// every behaviour hangs off a `data-*` attribute rather than an `onclick`.
 ///
 /// `unsafe-eval` is the one concession, and it is not optional: Datastar
@@ -93,10 +93,9 @@ async fn security_headers(
     response
 }
 
-/// Served from the binary rather than a volume: the stylesheet and the vendored
-/// bundle are build outputs, so a mount would be a second thing to keep in step
-/// with the image, and `app.js` travels with them because it is the same thing
-/// to the browser.
+/// Served from the binary rather than a volume: the stylesheet and the script
+/// bundle are build outputs, so a mount would be a second thing to keep in
+/// step with the image.
 ///
 /// Bodies are bytes rather than `&str` because half of these are now PNGs.
 /// `include_bytes!` covers the text ones too — the content type is stated here
@@ -107,16 +106,11 @@ async fn security_headers(
 /// browser asks for on its own, before it has parsed any `<link>` — and the
 /// only router that would otherwise answer it is behind the session layer, so
 /// an unauthenticated tab would get a login redirect where it wanted an image.
-const ASSETS: [(&str, &str, &[u8]); 12] = [
+const ASSETS: [(&str, &str, &[u8]); 11] = [
     (
         APP_JS_PATH,
         "text/javascript; charset=utf-8",
         include_bytes!(concat!("../assets/", env!("APP_JS_FILENAME"))),
-    ),
-    (
-        "/assets/datastar.js",
-        "text/javascript; charset=utf-8",
-        include_bytes!("../assets/datastar.js"),
     ),
     (
         "/assets/app.css",
@@ -170,6 +164,63 @@ const ASSETS: [(&str, &str, &[u8]); 12] = [
     ),
 ];
 
+/// How an asset may be cached. The script bundle's name changes with its
+/// content, so it is cached for good. Everything else keeps its name across
+/// deploys and is revalidated against an ETag instead, so a deploy's new
+/// stylesheet is never paired with the old one from cache.
+fn cache_headers(path: &str, body: &[u8]) -> (&'static str, Option<String>) {
+    if path == APP_JS_PATH {
+        return ("public, max-age=31536000, immutable", None);
+    }
+    use std::hash::{DefaultHasher, Hash as _, Hasher as _};
+    let mut hasher = DefaultHasher::new();
+    body.hash(&mut hasher);
+    ("no-cache", Some(format!("\"{:016x}\"", hasher.finish())))
+}
+
+/// `If-None-Match` matches under weak comparison (RFC 9110 13.1.2): any entry
+/// of a list, `*`, and a `W/` validator, which is what an ingress that
+/// compresses the response turns a strong one into.
+fn none_match(header: &axum::http::HeaderValue, etag: &str) -> bool {
+    let Ok(header) = header.to_str() else {
+        return false;
+    };
+    header.split(',').map(str::trim).any(|candidate| {
+        candidate == "*" || candidate.strip_prefix("W/").unwrap_or(candidate) == etag
+    })
+}
+
+async fn asset(
+    headers: axum::http::HeaderMap,
+    content_type: &'static str,
+    cache_control: &'static str,
+    etag: Option<String>,
+    body: &'static [u8],
+) -> Response {
+    let Some(etag) = etag else {
+        return (
+            [
+                (header::CONTENT_TYPE, content_type),
+                (header::CACHE_CONTROL, cache_control),
+            ],
+            body,
+        )
+            .into_response();
+    };
+    let fresh = headers
+        .get(header::IF_NONE_MATCH)
+        .is_some_and(|v| none_match(v, &etag));
+    let common = [
+        (header::CACHE_CONTROL, cache_control.to_string()),
+        (header::ETAG, etag),
+    ];
+    if fresh {
+        (StatusCode::NOT_MODIFIED, common).into_response()
+    } else {
+        (common, [(header::CONTENT_TYPE, content_type)], body).into_response()
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -190,7 +241,16 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Config::from_env()?;
     let bind_addr = config.bind_addr.clone();
-    let http = reqwest::Client::builder().build()?;
+    // Every outbound call has a ceiling: the notifier awaits Telegram inline,
+    // so one request that never answered would stop every later notification.
+    // aria2 calls set a tighter one of their own. No proxy, because the one
+    // client also carries the RPC to aria2 over loopback, which a proxy
+    // variable in the pod's environment would otherwise reroute.
+    let http = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(30))
+        .no_proxy()
+        .build()?;
 
     let state = AppState {
         aria2: aria2::Aria2::new(config.aria2_rpc_url.clone(), http.clone()),
@@ -223,38 +283,90 @@ async fn main() -> anyhow::Result<()> {
         .merge(auth::routes::router())
         .route("/healthz", get(|| async { "ok" }));
     for (path, content_type, body) in ASSETS {
-        app =
-            app.route(
-                path,
-                get(move || async move {
-                    ([(header::CONTENT_TYPE, content_type)], body).into_response()
-                }),
-            );
+        let (cache_control, etag) = cache_headers(path, body);
+        app = app.route(
+            path,
+            get(move |headers| asset(headers, content_type, cache_control, etag.clone(), body)),
+        );
     }
     let app = app
         .layer(axum::middleware::from_fn(security_headers))
         .layer(tower_http::trace::TraceLayer::new_for_http())
-        .with_state(state);
+        .with_state(state.clone());
 
+    let term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!(%bind_addr, "listening");
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown())
+        .with_graceful_shutdown(shutdown(term, state.poll.clone()))
         .await?;
+
+    // A removal runs detached from its request, and one cut off between
+    // stopping the download and deleting its partial files leaves files that
+    // nothing will find again. `resume` covers an interrupted add; nothing
+    // covers this, so it is given a moment to finish.
+    let deadline = tokio::time::Instant::now() + CLEARING_GRACE;
+    while !state.clearing.is_empty() && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
     Ok(())
 }
 
-/// A pod being replaced gets its in-flight requests finished. The streams are
-/// long-lived by design, so this does not wait for them — the client reconnects
-/// to the new pod, which is the same thing that happens on any restart.
-async fn shutdown() {
-    let _ = tokio::signal::ctrl_c().await;
+/// How long shutdown waits for removals already under way.
+const CLEARING_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// SIGTERM is what Kubernetes sends, and as PID 1 in the container the process
+/// has no default handler for it; Ctrl-C is for a terminal. In-flight
+/// requests are finished and every stream is aborted, since a stream never
+/// finishes on its own and an aborted one is retried within a second, against
+/// the new pod.
+async fn shutdown(mut term: tokio::signal::unix::Signal, poll: poll::Poll) {
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {}
+        _ = term.recv() => {}
+    }
     tracing::info!("shutting down");
+    poll.close();
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn the_hashed_bundle_is_immutable_and_everything_else_revalidates() {
+        let serve = |headers, path, body: &'static [u8]| {
+            let (cache_control, etag) = cache_headers(path, body);
+            asset(headers, "text/plain", cache_control, etag, body)
+        };
+        let bundle = serve(Default::default(), APP_JS_PATH, b"js").await;
+        assert_eq!(
+            bundle.headers()[header::CACHE_CONTROL],
+            "public, max-age=31536000, immutable"
+        );
+        assert!(!bundle.headers().contains_key(header::ETAG));
+
+        let css = serve(Default::default(), "/assets/app.css", b"css").await;
+        assert_eq!(css.headers()[header::CACHE_CONTROL], "no-cache");
+        let etag = css.headers()[header::ETAG].to_str().unwrap().to_string();
+
+        for sent in [
+            etag.clone(),
+            format!("W/{etag}"),
+            format!("\"other\", {etag}"),
+            "*".to_string(),
+        ] {
+            let mut headers = axum::http::HeaderMap::new();
+            headers.insert(header::IF_NONE_MATCH, sent.parse().unwrap());
+            let again = serve(headers, "/assets/app.css", b"css").await;
+            assert_eq!(again.status(), StatusCode::NOT_MODIFIED, "{sent}");
+        }
+
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(header::IF_NONE_MATCH, etag.parse().unwrap());
+        let changed = serve(headers, "/assets/app.css", b"new css").await;
+        assert_eq!(changed.status(), StatusCode::OK);
+    }
 
     #[tokio::test]
     async fn every_response_carries_the_security_headers() {
