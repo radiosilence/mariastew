@@ -190,7 +190,16 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Config::from_env()?;
     let bind_addr = config.bind_addr.clone();
-    let http = reqwest::Client::builder().build()?;
+    // Every outbound call has a ceiling: the notifier awaits Telegram inline,
+    // so one request that never answered would stop every later notification.
+    // aria2 calls set a tighter one of their own. No proxy, because the one
+    // client also carries the RPC to aria2 over loopback, which a proxy
+    // variable in the pod's environment would otherwise reroute.
+    let http = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(30))
+        .no_proxy()
+        .build()?;
 
     let state = AppState {
         aria2: aria2::Aria2::new(config.aria2_rpc_url.clone(), http.clone()),
