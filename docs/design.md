@@ -41,11 +41,10 @@ than a percentage:
   be indistinguishable from stalled).
 
   *finding peers* is deliberately **not** split further on the connection
-  count. It was, briefly, on the theory that peers connected meant metadata
-  was on its way — and a real dead magnet disproved it: DHT hands out peers
-  that have never heard of the infohash, so the count oscillates between zero
-  and a handful every few seconds while nothing arrives, which flapped both
-  the badge and the activity log. Nothing in one `tellStatus` separates a
+  count: DHT hands out peers that have never heard of the infohash, so on a
+  dead magnet the count oscillates between zero and a handful every few
+  seconds while nothing arrives, and a split would flap both the badge and the
+  activity log. Nothing in one `tellStatus` separates a
   magnet nobody has from one that is merely slow. How long it has been does,
   and that is what the log's timestamps answer.
 

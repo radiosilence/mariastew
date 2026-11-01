@@ -1021,10 +1021,10 @@ mod tests {
         assert_eq!(d.health(), Health::Verifying);
     }
 
-    /// The case the check matters most in. aria2 counts every piece in the control file as complete before
-    /// it starts hashing them, so a restored seeding torrent reads as fully
-    /// downloaded for the whole check, which is the longest wait a deploy
-    /// has.
+    /// The case the check matters most in. aria2 counts every piece in the
+    /// control file as complete before it starts hashing them, so a restored
+    /// seeding torrent reads as fully downloaded for the whole check, which is
+    /// the longest wait a deploy has.
     #[test]
     fn health_verifying_outranks_a_completion_aria2_has_not_rechecked_yet() {
         let mut d = download(Status::Active);

@@ -555,8 +555,9 @@ mod tests {
         );
     }
 
-    /// Each of these has a different answer to "should I wait or fix this", which is the whole reason the
-    /// state is a word rather than just a colour.
+    /// Each of these has a different answer to "should I wait or fix this",
+    /// which is the whole reason the state is a word rather than just a
+    /// colour.
     #[test]
     fn the_waiting_states_each_say_which_one_they_are() {
         assert_eq!(

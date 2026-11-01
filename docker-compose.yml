@@ -63,7 +63,7 @@ services:
   # loopback only, which is why this has to share mariastew's network
   # namespace rather than talk to it over a compose bridge network. Both
   # roots are mounted here too, same as production (`mounts` in
-  # packages/mariastew/src/mariastew.ts) — a download can land in either.
+  # deploy/pulumi/src/mariastew.ts) — a download can land in either.
   aria2:
     image: mariastew-dev
     depends_on:
@@ -77,7 +77,7 @@ services:
       - --dir=/tv
       - --continue=true
       - --check-integrity=true
-      # Production sets this (see packages/mariastew/src/mariastew.ts) and the
+      # Production sets this (see deploy/pulumi/src/mariastew.ts) and the
       # add path is shaped around it: the followed download is created stopped
       # so the filter's selection lands before anything is fetched. Without it
       # here, local dev would exercise a different sequence from the one that
