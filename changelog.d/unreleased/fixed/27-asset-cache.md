@@ -1,0 +1,1 @@
+- **Deploys cannot pair new markup with an old stylesheet.** Assets carry cache headers: the hashed script is cached for good, everything else is revalidated.

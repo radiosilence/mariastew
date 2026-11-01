@@ -47,7 +47,9 @@ pub fn spawn(state: AppState) {
         let mut poll = state.poll.subscribe();
         let mut selected = HashSet::new();
         while poll.changed().await.is_ok() {
-            let downloads = poll.borrow_and_update().downloads.clone();
+            let Some(downloads) = poll.borrow_and_update().downloads.clone() else {
+                continue;
+            };
             reconcile(&state, &downloads, &mut selected).await;
         }
     });
@@ -57,8 +59,10 @@ pub fn spawn(state: AppState) {
 /// Nothing removes `select-file` once it is set, so each one is asked about
 /// once rather than on every tick for as long as it stays paused.
 async fn reconcile(state: &AppState, downloads: &[Download], selected: &mut HashSet<String>) {
-    let live: HashSet<&str> = downloads.iter().map(|d| d.gid.as_str()).collect();
-    selected.retain(|gid| live.contains(gid.as_str()));
+    if !selected.is_empty() {
+        let live: HashSet<&str> = downloads.iter().map(|d| d.gid.as_str()).collect();
+        selected.retain(|gid| live.contains(gid.as_str()));
+    }
 
     for d in downloads {
         if d.status != Status::Paused || selected.contains(&d.gid) || state.adding.contains(&d.gid)

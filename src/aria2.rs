@@ -655,7 +655,9 @@ impl<'de> Deserialize<'de> for MulticallResult {
                         map.next_value::<serde::de::IgnoredAny>()?;
                     }
                 }
-                Ok(MulticallResult::Fault(fault.unwrap_or_default()))
+                Ok(MulticallResult::Fault(
+                    fault.unwrap_or_else(|| "fault with no message".to_string()),
+                ))
             }
         }
         deserializer.deserialize_any(Visitor)
@@ -663,10 +665,10 @@ impl<'de> Deserialize<'de> for MulticallResult {
 }
 
 impl MulticallResult {
-    fn into_downloads(self) -> AppResult<Vec<Download>> {
+    fn into_downloads(self, method: &str) -> AppResult<Vec<Download>> {
         match self {
             MulticallResult::Ok(raws) => raws.into_iter().map(RawDownload::into_download).collect(),
-            MulticallResult::Fault(fault) => Err(AppError::Upstream(fault)),
+            MulticallResult::Fault(fault) => Err(AppError::Upstream(format!("{method}: {fault}"))),
         }
     }
 }
@@ -692,7 +694,7 @@ impl Aria2 {
             "method": method,
             "params": params,
         });
-        let response: RpcResponse<T> = self
+        let bytes = self
             .http
             .post(self.url.as_str())
             .timeout(RPC_TIMEOUT)
@@ -700,10 +702,16 @@ impl Aria2 {
             .send()
             .await
             .map_err(|e| AppError::Upstream(e.to_string()))?
-            .json()
+            .bytes()
             .await
             .map_err(|e| AppError::Upstream(e.to_string()))?;
+        // Decoded here rather than by reqwest, whose error drops serde's,
+        // which is the part that names the field aria2 sent wrong.
+        let response: RpcResponse<T> = serde_json::from_slice(&bytes)
+            .map_err(|e| AppError::Upstream(format!("{method}: {e}")))?;
         if let Some(error) = response.error {
+            // aria2's own wording, unprefixed: callers recognise refusals
+            // by it ("is already registered", "No such download").
             return Err(AppError::Upstream(error.message));
         }
         response.result.ok_or_else(|| {
@@ -741,9 +749,13 @@ impl Aria2 {
         // A negative offset reads from the newest end, so a full list drops
         // the oldest results rather than the ones just finished. Reversed back
         // to aria2's own oldest-first order.
-        let mut stopped = stopped.into_downloads()?;
+        let mut stopped = stopped.into_downloads("aria2.tellStopped")?;
         stopped.reverse();
-        Ok([active.into_downloads()?, waiting.into_downloads()?, stopped])
+        Ok([
+            active.into_downloads("aria2.tellActive")?,
+            waiting.into_downloads("aria2.tellWaiting")?,
+            stopped,
+        ])
     }
 
     pub async fn pause(&self, gid: &str) -> AppResult<()> {
