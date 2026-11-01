@@ -25,7 +25,7 @@ use std::sync::Arc;
 use std::{fs, path::Path};
 
 use axum::Router;
-use axum::http::header;
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
@@ -170,6 +170,46 @@ const ASSETS: [(&str, &str, &[u8]); 12] = [
     ),
 ];
 
+/// The script bundle's name changes with its content, so it is cached for
+/// good. Everything else keeps its name across deploys and is revalidated
+/// against an ETag instead, so a deploy's new stylesheet is never paired with
+/// the old one from cache.
+async fn asset(
+    headers: axum::http::HeaderMap,
+    path: &'static str,
+    content_type: &'static str,
+    body: &'static [u8],
+) -> Response {
+    if path == APP_JS_PATH {
+        return (
+            [
+                (header::CONTENT_TYPE, content_type),
+                (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+            ],
+            body,
+        )
+            .into_response();
+    }
+    let etag = format!("\"{:016x}\"", {
+        use std::hash::{DefaultHasher, Hash as _, Hasher as _};
+        let mut hasher = DefaultHasher::new();
+        body.hash(&mut hasher);
+        hasher.finish()
+    });
+    let fresh = headers
+        .get(header::IF_NONE_MATCH)
+        .is_some_and(|v| v.as_bytes() == etag.as_bytes());
+    let common = [
+        (header::CACHE_CONTROL, "no-cache".to_string()),
+        (header::ETAG, etag),
+    ];
+    if fresh {
+        (StatusCode::NOT_MODIFIED, common).into_response()
+    } else {
+        (common, [(header::CONTENT_TYPE, content_type)], body).into_response()
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -222,13 +262,10 @@ async fn main() -> anyhow::Result<()> {
         .merge(auth::routes::router())
         .route("/healthz", get(|| async { "ok" }));
     for (path, content_type, body) in ASSETS {
-        app =
-            app.route(
-                path,
-                get(move || async move {
-                    ([(header::CONTENT_TYPE, content_type)], body).into_response()
-                }),
-            );
+        app = app.route(
+            path,
+            get(move |headers| asset(headers, path, content_type, body)),
+        );
     }
     let app = app
         .layer(axum::middleware::from_fn(security_headers))
@@ -254,6 +291,26 @@ async fn shutdown() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn the_hashed_bundle_is_immutable_and_everything_else_revalidates() {
+        let bundle = asset(Default::default(), APP_JS_PATH, "text/javascript", b"js").await;
+        assert_eq!(
+            bundle.headers()[header::CACHE_CONTROL],
+            "public, max-age=31536000, immutable"
+        );
+
+        let css = asset(Default::default(), "/assets/app.css", "text/css", b"css").await;
+        assert_eq!(css.headers()[header::CACHE_CONTROL], "no-cache");
+        let etag = css.headers()[header::ETAG].clone();
+
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(header::IF_NONE_MATCH, etag);
+        let again = asset(headers.clone(), "/assets/app.css", "text/css", b"css").await;
+        assert_eq!(again.status(), StatusCode::NOT_MODIFIED);
+        let changed = asset(headers, "/assets/app.css", "text/css", b"new css").await;
+        assert_eq!(changed.status(), StatusCode::OK);
+    }
 
     #[tokio::test]
     async fn every_response_carries_the_security_headers() {
