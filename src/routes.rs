@@ -277,7 +277,7 @@ pub async fn stream(
             // warning.
             if view.unreachable {
                 if !warned {
-                    yield Ok::<_, Infallible>(patch_elements(&view.full));
+                    yield Ok::<_, std::io::Error>(patch_elements(&view.full));
                     beat.reset();
                     warned = true;
                 }
