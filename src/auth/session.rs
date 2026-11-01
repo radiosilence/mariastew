@@ -34,8 +34,9 @@ pub struct Flow {
 
 /// Login flows held at once. `/auth/login` is public and every request to it
 /// starts one, so without a cap anyone could grow the map for as long as they
-/// cared to. Past it the oldest is dropped: a flood can fail a login in
-/// progress, but cannot lock everyone out or exhaust memory.
+/// cared to. Past it the oldest is dropped, which keeps memory bounded; while
+/// a flood lasts it can push out logins in progress. Rate limiting belongs at
+/// the ingress.
 const MAX_FLOWS: usize = 1024;
 
 #[derive(Clone, Default)]
