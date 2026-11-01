@@ -1,1 +1,1 @@
-- **Builds use the latest stable Rust.** Mise installs `rust` at `latest`; release builds use `stable` and `Dockerfile.dev` uses `rust:alpine`, rather than 1.97.
+- **Builds use the latest stable Rust.** mise installs `rust` at `latest`; release builds use `stable` and `Dockerfile.dev` uses `rust:alpine`, rather than 1.97.
