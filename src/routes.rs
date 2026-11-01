@@ -1226,6 +1226,43 @@ mod tests {
         assert_eq!(magnet_infohash("magnet:?dn=no-hash-here"), None);
     }
 
+    /// The stopped list is read from its newest end, so what just finished is
+    /// always in it, and handed on in aria2's own oldest-first order.
+    #[tokio::test]
+    async fn the_stopped_list_is_read_newest_first_and_shown_oldest_first() {
+        async fn rpc(
+            axum::Json(body): axum::Json<serde_json::Value>,
+        ) -> axum::Json<serde_json::Value> {
+            let stopped = |gid: &str| serde_json::json!({"gid": gid, "status": "complete", "dir": "/d", "files": []});
+            let results: Vec<_> = body["params"][0]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|call| match call["methodName"].as_str().unwrap() {
+                    "aria2.tellStopped" => {
+                        assert_eq!(call["params"][0], -1, "read from the oldest end");
+                        serde_json::json!([[stopped("newest"), stopped("older")]])
+                    }
+                    _ => serde_json::json!([[]]),
+                })
+                .collect();
+            axum::Json(serde_json::json!({"jsonrpc": "2.0", "id": "mariastew", "result": results}))
+        }
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(listener, Router::new().route("/", post(rpc)))
+                .await
+                .unwrap()
+        });
+
+        let downloads = all_downloads(&state(url)).await.unwrap();
+        assert_eq!(
+            downloads.iter().map(|d| d.gid.as_str()).collect::<Vec<_>>(),
+            ["older", "newest"]
+        );
+    }
+
     /// Everything below builds a fake aria2 on axum (already a dependency —
     /// its `hyper` server handles connection reuse without a hand-rolled
     /// listener) to exercise `add` and the detached `finish_add` together,

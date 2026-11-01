@@ -226,8 +226,15 @@ function dispatch(method: string, params: unknown[]): unknown {
       return byStatus("active");
     case "aria2.tellWaiting":
       return byStatus("waiting", "paused");
-    case "aria2.tellStopped":
-      return byStatus("complete", "error", "removed");
+    // aria2's paging: a negative offset counts from the newest end and
+    // answers newest-first.
+    case "aria2.tellStopped": {
+      const stopped = byStatus("complete", "error", "removed");
+      const [offset, num] = params as [number, number];
+      if (offset >= 0) return stopped.slice(offset, offset + num);
+      const end = stopped.length + offset + 1;
+      return stopped.slice(Math.max(0, end - num), end).reverse();
+    }
     case "aria2.tellStatus": {
       const d = found();
       if (!d) throw new Error(`No such download: ${gid}`);

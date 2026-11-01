@@ -55,9 +55,13 @@ const KEYS: &[&str] = &[
     "followedBy",
 ];
 
-/// How many waiting and stopped downloads are listed. aria2's own default for
-/// `--max-download-result`, so the stopped list is normally read whole.
-const LIST_LIMIT: u32 = 1000;
+/// How many waiting downloads are listed: all of them in practice, since
+/// `resume` has to see every paused add.
+const WAITING_LIMIT: u32 = 1000;
+
+/// How many stopped downloads are listed, newest first. Every row is rendered
+/// on every tick, so this is the page's length rather than aria2's.
+const STOPPED_LIMIT: u32 = 100;
 
 #[derive(Clone)]
 pub struct Aria2 {
@@ -612,23 +616,57 @@ struct RpcResponse<T> {
 
 /// One call's answer inside a `system.multicall`: a one-element array holding
 /// the result, or a fault object in its place.
-#[derive(Deserialize)]
-#[serde(untagged)]
 enum MulticallResult {
-    Ok([Vec<RawDownload>; 1]),
-    Fault {
-        #[serde(rename = "faultString")]
-        fault_string: String,
-    },
+    Ok(Vec<RawDownload>),
+    Fault(String),
+}
+
+/// By hand rather than `#[serde(untagged)]`, which buffers its whole input
+/// before trying each variant — every download, every tick.
+impl<'de> Deserialize<'de> for MulticallResult {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = MulticallResult;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a one-element result array or a fault object")
+            }
+
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: A,
+            ) -> Result<Self::Value, A::Error> {
+                let downloads = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                Ok(MulticallResult::Ok(downloads))
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let mut fault = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    if key == "faultString" {
+                        fault = Some(map.next_value()?);
+                    } else {
+                        map.next_value::<serde::de::IgnoredAny>()?;
+                    }
+                }
+                Ok(MulticallResult::Fault(fault.unwrap_or_default()))
+            }
+        }
+        deserializer.deserialize_any(Visitor)
+    }
 }
 
 impl MulticallResult {
     fn into_downloads(self) -> AppResult<Vec<Download>> {
         match self {
-            MulticallResult::Ok([raws]) => {
-                raws.into_iter().map(RawDownload::into_download).collect()
-            }
-            MulticallResult::Fault { fault_string } => Err(AppError::Upstream(fault_string)),
+            MulticallResult::Ok(raws) => raws.into_iter().map(RawDownload::into_download).collect(),
+            MulticallResult::Fault(fault) => Err(AppError::Upstream(fault)),
         }
     }
 }
@@ -695,8 +733,8 @@ impl Aria2 {
                 "system.multicall",
                 serde_json::json!([[
                     {"methodName": "aria2.tellActive", "params": [KEYS]},
-                    {"methodName": "aria2.tellWaiting", "params": [0, LIST_LIMIT, KEYS]},
-                    {"methodName": "aria2.tellStopped", "params": [-1, LIST_LIMIT, KEYS]},
+                    {"methodName": "aria2.tellWaiting", "params": [0, WAITING_LIMIT, KEYS]},
+                    {"methodName": "aria2.tellStopped", "params": [-1, STOPPED_LIMIT, KEYS]},
                 ]]),
             )
             .await?;
@@ -821,33 +859,60 @@ mod tests {
     }
 
     /// Every field `RawDownload` reads has to be asked for by name, or the poll
-    /// silently reads its default. A full response filtered down to `KEYS`
-    /// must parse to the same download as the unfiltered one.
+    /// silently reads its default. The field list is the one serde's derive
+    /// generates, so a field added without a key fails here.
     #[test]
-    fn keys_cover_every_field_a_download_is_read_from() {
-        let full = serde_json::json!({
-            "gid": "abc123", "status": "active", "totalLength": "1000",
-            "completedLength": "500", "uploadLength": "250", "downloadSpeed": "10",
-            "uploadSpeed": "5", "connections": "3", "numSeeders": "2",
-            "errorMessage": "m", "errorCode": "9", "dir": "/downloads",
-            "files": [{"index": "1", "path": "/downloads/a.mkv", "length": "1000",
-                       "completedLength": "500", "selected": "true"}],
-            "pieceLength": "16", "numPieces": "63", "verifiedLength": "100",
-            "verifyIntegrityPending": "true", "infoHash": "ff",
-            "bittorrent": {"info": {"name": "A"}}, "followedBy": ["def456"],
-            "bitfield": "ffff", "following": "x", "belongsTo": "y",
-        });
-        let filtered: serde_json::Map<_, _> = full
-            .as_object()
-            .unwrap()
-            .iter()
-            .filter(|(k, _)| KEYS.contains(&k.as_str()))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        assert_eq!(
-            format!("{:?}", parse_download(full.clone()).unwrap()),
-            format!("{:?}", parse_download(filtered.into()).unwrap()),
-        );
+    fn keys_are_exactly_the_fields_a_download_is_read_from() {
+        struct Capture<'a>(&'a mut &'static [&'static str]);
+        impl<'de> serde::Deserializer<'de> for Capture<'_> {
+            type Error = serde::de::value::Error;
+            fn deserialize_any<V: serde::de::Visitor<'de>>(
+                self,
+                _: V,
+            ) -> Result<V::Value, Self::Error> {
+                Err(serde::de::Error::custom("not a struct"))
+            }
+            fn deserialize_struct<V: serde::de::Visitor<'de>>(
+                self,
+                _: &'static str,
+                fields: &'static [&'static str],
+                _: V,
+            ) -> Result<V::Value, Self::Error> {
+                *self.0 = fields;
+                Err(serde::de::Error::custom("captured"))
+            }
+            serde::forward_to_deserialize_any! {
+                bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes
+                byte_buf option unit unit_struct newtype_struct seq tuple tuple_struct map
+                enum identifier ignored_any
+            }
+        }
+
+        let mut fields: &'static [&'static str] = &[];
+        let _ = RawDownload::deserialize(Capture(&mut fields));
+        let mut fields = fields.to_vec();
+        let mut keys = KEYS.to_vec();
+        fields.sort_unstable();
+        keys.sort_unstable();
+        assert_eq!(fields, keys);
+    }
+
+    /// A malformed download reports the field at fault rather than a generic
+    /// "did not match".
+    #[test]
+    fn a_multicall_entry_is_a_result_or_a_fault() {
+        let parsed: Vec<MulticallResult> = serde_json::from_value(serde_json::json!([
+            [[{"gid": "a", "status": "active"}]],
+            {"faultCode": 1, "faultString": "nope"},
+        ]))
+        .unwrap();
+        assert!(matches!(&parsed[0], MulticallResult::Ok(d) if d.len() == 1));
+        assert!(matches!(&parsed[1], MulticallResult::Fault(f) if f == "nope"));
+
+        let err = serde_json::from_value::<MulticallResult>(serde_json::json!([[{"files": 3}]]))
+            .err()
+            .unwrap();
+        assert!(err.to_string().contains("sequence"), "{err}");
     }
 
     #[test]
