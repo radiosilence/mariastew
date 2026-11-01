@@ -12,7 +12,10 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use std::collections::HashMap;
+
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 
 use crate::error::{AppError, AppResult};
 
@@ -25,6 +28,40 @@ use crate::error::{AppError, AppResult};
 /// a sidecar that has stopped answering, which is worth saying rather than
 /// waiting out.
 const RPC_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The fields `RawDownload` reads, passed as `keys` so aria2 leaves out the
+/// rest — `bitfield` above all, a hex string as long as the torrent has
+/// pieces, for every download on every tick.
+const KEYS: &[&str] = &[
+    "gid",
+    "status",
+    "totalLength",
+    "completedLength",
+    "uploadLength",
+    "downloadSpeed",
+    "uploadSpeed",
+    "connections",
+    "numSeeders",
+    "errorMessage",
+    "errorCode",
+    "dir",
+    "files",
+    "pieceLength",
+    "numPieces",
+    "verifiedLength",
+    "verifyIntegrityPending",
+    "infoHash",
+    "bittorrent",
+    "followedBy",
+];
+
+/// How many waiting downloads are listed: all of them in practice, since
+/// `resume` has to see every paused add.
+const WAITING_LIMIT: u32 = 1000;
+
+/// How many stopped downloads are listed, newest first. Every row is rendered
+/// on every tick, so this is the page's length rather than aria2's.
+const STOPPED_LIMIT: u32 = 100;
 
 #[derive(Clone)]
 pub struct Aria2 {
@@ -559,16 +596,11 @@ impl RawDownload {
     }
 }
 
+#[cfg(test)]
 fn parse_download(value: serde_json::Value) -> AppResult<Download> {
     let raw: RawDownload =
         serde_json::from_value(value).map_err(|e| AppError::Upstream(format!("aria2: {e}")))?;
     raw.into_download()
-}
-
-fn parse_downloads(value: serde_json::Value) -> AppResult<Vec<Download>> {
-    let raws: Vec<RawDownload> =
-        serde_json::from_value(value).map_err(|e| AppError::Upstream(format!("aria2: {e}")))?;
-    raws.into_iter().map(RawDownload::into_download).collect()
 }
 
 #[derive(Deserialize)]
@@ -576,12 +608,69 @@ struct RpcError {
     message: String,
 }
 
-#[derive(Deserialize, Default)]
-struct RpcResponse {
-    #[serde(default)]
-    result: Option<serde_json::Value>,
-    #[serde(default)]
+#[derive(Deserialize)]
+struct RpcResponse<T> {
+    result: Option<T>,
     error: Option<RpcError>,
+}
+
+/// One call's answer inside a `system.multicall`: a one-element array holding
+/// the result, or a fault object in its place.
+enum MulticallResult {
+    Ok(Vec<RawDownload>),
+    Fault(String),
+}
+
+/// By hand rather than `#[serde(untagged)]`, which buffers its whole input
+/// before trying each variant — every download, every tick.
+impl<'de> Deserialize<'de> for MulticallResult {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = MulticallResult;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a one-element result array or a fault object")
+            }
+
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut seq: A,
+            ) -> Result<Self::Value, A::Error> {
+                let downloads = seq
+                    .next_element()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                Ok(MulticallResult::Ok(downloads))
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let mut fault = None;
+                while let Some(key) = map.next_key::<String>()? {
+                    if key == "faultString" {
+                        fault = Some(map.next_value()?);
+                    } else {
+                        map.next_value::<serde::de::IgnoredAny>()?;
+                    }
+                }
+                Ok(MulticallResult::Fault(
+                    fault.unwrap_or_else(|| "fault with no message".to_string()),
+                ))
+            }
+        }
+        deserializer.deserialize_any(Visitor)
+    }
+}
+
+impl MulticallResult {
+    fn into_downloads(self, method: &str) -> AppResult<Vec<Download>> {
+        match self {
+            MulticallResult::Ok(raws) => raws.into_iter().map(RawDownload::into_download).collect(),
+            MulticallResult::Fault(fault) => Err(AppError::Upstream(format!("{method}: {fault}"))),
+        }
+    }
 }
 
 impl Aria2 {
@@ -593,28 +682,36 @@ impl Aria2 {
     }
 
     /// One JSON-RPC round trip. Every method below is this plus a shape.
-    async fn call(&self, method: &str, params: serde_json::Value) -> AppResult<serde_json::Value> {
-        let full_method = format!("aria2.{method}");
-        tracing::debug!(method = %full_method, "aria2 rpc call");
+    async fn call<T: DeserializeOwned>(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+    ) -> AppResult<T> {
+        tracing::debug!(method, "aria2 rpc call");
         let body = serde_json::json!({
             "jsonrpc": "2.0",
             "id": "mariastew",
-            "method": full_method,
+            "method": method,
             "params": params,
         });
-        let response = self
+        let bytes = self
             .http
             .post(self.url.as_str())
             .timeout(RPC_TIMEOUT)
             .json(&body)
             .send()
             .await
-            .map_err(|e| AppError::Upstream(e.to_string()))?;
-        let response: RpcResponse = response
-            .json()
+            .map_err(|e| AppError::Upstream(e.to_string()))?
+            .bytes()
             .await
             .map_err(|e| AppError::Upstream(e.to_string()))?;
+        // Decoded here rather than by reqwest, whose error drops serde's,
+        // which is the part that names the field aria2 sent wrong.
+        let response: RpcResponse<T> = serde_json::from_slice(&bytes)
+            .map_err(|e| AppError::Upstream(format!("{method}: {e}")))?;
         if let Some(error) = response.error {
+            // aria2's own wording, unprefixed: callers recognise refusals
+            // by it ("is already registered", "No such download").
             return Err(AppError::Upstream(error.message));
         }
         response.result.ok_or_else(|| {
@@ -623,46 +720,53 @@ impl Aria2 {
     }
 
     /// Returns the gid. `options` is passed through as aria2's option object,
-    /// which is how the caller asks for a metadata-only pass or names the
-    /// destination and the wanted file indices.
+    /// which is how the caller names the destination and the wanted file
+    /// indices.
     pub async fn add_uri(&self, uri: &str, options: serde_json::Value) -> AppResult<String> {
-        let result = self
-            .call("addUri", serde_json::json!([[uri], options]))
-            .await?;
-        serde_json::from_value(result).map_err(|e| AppError::Upstream(format!("aria2: {e}")))
+        self.call("aria2.addUri", serde_json::json!([[uri], options]))
+            .await
     }
 
     pub async fn tell_status(&self, gid: &str) -> AppResult<Download> {
-        let result = self.call("tellStatus", serde_json::json!([gid])).await?;
-        parse_download(result)
+        self.call::<RawDownload>("aria2.tellStatus", serde_json::json!([gid, KEYS]))
+            .await?
+            .into_download()
     }
 
-    pub async fn tell_active(&self) -> AppResult<Vec<Download>> {
-        let result = self.call("tellActive", serde_json::json!([])).await?;
-        parse_downloads(result)
-    }
-
-    pub async fn tell_waiting(&self, offset: i32, num: i32) -> AppResult<Vec<Download>> {
-        let result = self
-            .call("tellWaiting", serde_json::json!([offset, num]))
+    /// Every download aria2 holds — active, then waiting, then stopped — in
+    /// one round trip.
+    pub async fn tell_all(&self) -> AppResult<[Vec<Download>; 3]> {
+        let [active, waiting, stopped]: [MulticallResult; 3] = self
+            .call(
+                "system.multicall",
+                serde_json::json!([[
+                    {"methodName": "aria2.tellActive", "params": [KEYS]},
+                    {"methodName": "aria2.tellWaiting", "params": [0, WAITING_LIMIT, KEYS]},
+                    {"methodName": "aria2.tellStopped", "params": [-1, STOPPED_LIMIT, KEYS]},
+                ]]),
+            )
             .await?;
-        parse_downloads(result)
-    }
-
-    pub async fn tell_stopped(&self, offset: i32, num: i32) -> AppResult<Vec<Download>> {
-        let result = self
-            .call("tellStopped", serde_json::json!([offset, num]))
-            .await?;
-        parse_downloads(result)
+        // A negative offset reads from the newest end, so a full list drops
+        // the oldest results rather than the ones just finished. Reversed back
+        // to aria2's own oldest-first order.
+        let mut stopped = stopped.into_downloads("aria2.tellStopped")?;
+        stopped.reverse();
+        Ok([
+            active.into_downloads("aria2.tellActive")?,
+            waiting.into_downloads("aria2.tellWaiting")?,
+            stopped,
+        ])
     }
 
     pub async fn pause(&self, gid: &str) -> AppResult<()> {
-        self.call("pause", serde_json::json!([gid])).await?;
+        self.call::<String>("aria2.pause", serde_json::json!([gid]))
+            .await?;
         Ok(())
     }
 
     pub async fn unpause(&self, gid: &str) -> AppResult<()> {
-        self.call("unpause", serde_json::json!([gid])).await?;
+        self.call::<String>("aria2.unpause", serde_json::json!([gid]))
+            .await?;
         Ok(())
     }
 
@@ -676,14 +780,15 @@ impl Aria2 {
     /// aria2 refuses this for a download that is already stopped, which is what
     /// `remove_download_result` is for.
     pub async fn remove(&self, gid: &str) -> AppResult<()> {
-        self.call("forceRemove", serde_json::json!([gid])).await?;
+        self.call::<String>("aria2.forceRemove", serde_json::json!([gid]))
+            .await?;
         Ok(())
     }
 
     /// Clears the corpse out of the stopped list. Without this a removed
     /// download stays in `tellStopped` and the list fills up with them.
     pub async fn remove_download_result(&self, gid: &str) -> AppResult<()> {
-        self.call("removeDownloadResult", serde_json::json!([gid]))
+        self.call::<String>("aria2.removeDownloadResult", serde_json::json!([gid]))
             .await?;
         Ok(())
     }
@@ -695,7 +800,7 @@ impl Aria2 {
     /// aria2 restarts the download internally to apply it; no second gid, no
     /// caller-visible interruption.
     pub async fn change_option(&self, gid: &str, options: serde_json::Value) -> AppResult<()> {
-        self.call("changeOption", serde_json::json!([gid, options]))
+        self.call::<String>("aria2.changeOption", serde_json::json!([gid, options]))
             .await?;
         Ok(())
     }
@@ -713,11 +818,10 @@ impl Aria2 {
     /// `getOption` entirely, which is why this answers a bool rather than
     /// handing back a string nobody would know how to read.
     pub async fn has_selection(&self, gid: &str) -> AppResult<bool> {
-        let options = self.call("getOption", serde_json::json!([gid])).await?;
-        Ok(options
-            .get("select-file")
-            .and_then(|v| v.as_str())
-            .is_some_and(|v| !v.is_empty()))
+        let options: HashMap<String, String> = self
+            .call("aria2.getOption", serde_json::json!([gid]))
+            .await?;
+        Ok(options.get("select-file").is_some_and(|v| !v.is_empty()))
     }
 }
 
@@ -764,6 +868,63 @@ mod tests {
         assert!(d.files[0].selected);
         assert_eq!(d.files[1].index, 2);
         assert!(!d.files[1].selected);
+    }
+
+    /// Every field `RawDownload` reads has to be asked for by name, or the poll
+    /// silently reads its default. The field list is the one serde's derive
+    /// generates, so a field added without a key fails here.
+    #[test]
+    fn keys_are_exactly_the_fields_a_download_is_read_from() {
+        struct Capture<'a>(&'a mut &'static [&'static str]);
+        impl<'de> serde::Deserializer<'de> for Capture<'_> {
+            type Error = serde::de::value::Error;
+            fn deserialize_any<V: serde::de::Visitor<'de>>(
+                self,
+                _: V,
+            ) -> Result<V::Value, Self::Error> {
+                Err(serde::de::Error::custom("not a struct"))
+            }
+            fn deserialize_struct<V: serde::de::Visitor<'de>>(
+                self,
+                _: &'static str,
+                fields: &'static [&'static str],
+                _: V,
+            ) -> Result<V::Value, Self::Error> {
+                *self.0 = fields;
+                Err(serde::de::Error::custom("captured"))
+            }
+            serde::forward_to_deserialize_any! {
+                bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes
+                byte_buf option unit unit_struct newtype_struct seq tuple tuple_struct map
+                enum identifier ignored_any
+            }
+        }
+
+        let mut fields: &'static [&'static str] = &[];
+        let _ = RawDownload::deserialize(Capture(&mut fields));
+        let mut fields = fields.to_vec();
+        let mut keys = KEYS.to_vec();
+        fields.sort_unstable();
+        keys.sort_unstable();
+        assert_eq!(fields, keys);
+    }
+
+    /// A malformed download reports the field at fault rather than a generic
+    /// "did not match".
+    #[test]
+    fn a_multicall_entry_is_a_result_or_a_fault() {
+        let parsed: Vec<MulticallResult> = serde_json::from_value(serde_json::json!([
+            [[{"gid": "a", "status": "active"}]],
+            {"faultCode": 1, "faultString": "nope"},
+        ]))
+        .unwrap();
+        assert!(matches!(&parsed[0], MulticallResult::Ok(d) if d.len() == 1));
+        assert!(matches!(&parsed[1], MulticallResult::Fault(f) if f == "nope"));
+
+        let err = serde_json::from_value::<MulticallResult>(serde_json::json!([[{"files": 3}]]))
+            .err()
+            .unwrap();
+        assert!(err.to_string().contains("sequence"), "{err}");
     }
 
     #[test]
