@@ -478,11 +478,11 @@ async fn start_add(state: &AppState, sub: &str, magnet: &str, dir: &str) -> Resu
         .await
     {
         Ok(gid) => gid,
-        // Not a server fault: this infohash is already known to aria2,
-        // either genuinely downloading already or a metadata pass a previous
-        // attempt left registered, most likely by the pod dying while the
-        // detached finish was running. aria2's error does not say which, and guessing wrong
-        // is worse than asking: forcibly clearing it here could silently
+        // Not a server fault: this infohash is already known to aria2, either
+        // genuinely downloading already or a metadata pass a previous attempt
+        // left registered, most likely by the pod dying while the detached
+        // finish was running. aria2's error does not say which, and guessing
+        // wrong is worse than asking: forcibly clearing it here could silently
         // cancel a real download. The download list is already on the page —
         // that is where "which one is it" gets answered.
         Err(AppError::Upstream(msg)) if is_already_registered(&msg) => {
@@ -554,11 +554,10 @@ const RESOLVE_TIMEOUT: Duration = Duration::from_secs(600);
 /// A magnet's own `files` describes the resolving gid itself — one entry,
 /// regardless of how many files the torrent actually has. `follow-torrent`
 /// (`mem`) spawns a second download from the resolved metadata and links the
-/// two by gid —
-/// `followedBy` on this one, `following` on that one — and it is that second
-/// gid's `files` that lists what the torrent actually contains. Reading the
-/// selection from anywhere else means the filter never sees most of the
-/// torrent and the choice of what to keep is decided by file order.
+/// two by gid — `followedBy` on this one, `following` on that one — and it is
+/// that second gid's `files` that lists what the torrent actually contains.
+/// Reading the selection from anywhere else means the filter never sees most of
+/// the torrent and the choice of what to keep is decided by file order.
 ///
 /// Applying the selection through `changeOption` rather than a second
 /// `addUri` also means there is no infohash collision to resolve: one
@@ -1793,14 +1792,13 @@ mod tests {
         /// file sits at index 1 would be selected.
         #[tokio::test]
         async fn finish_add_reads_the_selection_from_the_followed_downloads_file_list() {
-            // A multi-file release
-            // with the video at index 2 (not 1) and a nested `Other/`
-            // subdirectory — a torrent's `files` list has no directory
-            // entries of its own, only full paths, so `Other/...` shows up
-            // exactly like any other nested path. Index 1 and the `Other/`
-            // entry are unambiguous `filter::is_garbage` matches (`.nfo`,
-            // `.jpg`); a selection computed from the wrong file list (the
-            // metadata gid's own, always length 1) could only ever have
+            // A multi-file release with the video at index 2 (not 1) and a
+            // nested `Other/` subdirectory — a torrent's `files` list has no
+            // directory entries of its own, only full paths, so `Other/...`
+            // shows up exactly like any other nested path. Index 1 and the
+            // `Other/` entry are unambiguous `filter::is_garbage` matches
+            // (`.nfo`, `.jpg`); a selection computed from the wrong file list
+            // (the metadata gid's own, always length 1) could only ever have
             // picked the right one by coincidence.
             let child_files = serde_json::json!([
                 {"index": "1", "path": "/mnt/kontent/movies/Nightfall Harbour (1994) [1080p]/PACKGRP.nfo", "length": "473", "selected": "true"},
@@ -2484,10 +2482,9 @@ mod tests {
             );
         }
 
-        /// A removal that does not take is a row that is still there, and
-        /// answering 204 over it would report success for a row that is still
-        /// there. The mark comes
-        /// off either way — the controls it hid have to come back.
+        /// A removal that does not take leaves the row in place, and a 204
+        /// would report success over it. The mark comes off either way, because
+        /// the controls it hid have to come back.
         #[tokio::test]
         async fn a_removal_aria2_refuses_answers_with_an_error_and_hands_the_row_back() {
             let mock = mock_server("active", u32::MAX).await;

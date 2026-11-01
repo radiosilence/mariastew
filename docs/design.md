@@ -40,13 +40,13 @@ than a percentage:
   on disk, which reads as zero speed with peers connected and would otherwise
   be indistinguishable from stalled).
 
-  *finding peers* is deliberately **not** split further on the connection
-  count: DHT hands out peers that have never heard of the infohash, so on a
-  dead magnet the count oscillates between zero and a handful every few
-  seconds while nothing arrives, and a split would flap both the badge and the
-  activity log. Nothing in one `tellStatus` separates a
-  magnet nobody has from one that is merely slow. How long it has been does,
-  and that is what the log's timestamps answer.
+  *finding peers* is deliberately **not** split further on the connection count:
+  DHT hands out peers that have never heard of the infohash, so on a dead magnet
+  the count oscillates between zero and a handful every few seconds while
+  nothing arrives, and a split would flap both the badge and the activity log.
+  Nothing in one `tellStatus` separates a magnet nobody has from one that is
+  merely slow. How long it has been does, and that is what the log's timestamps
+  answer.
 
   It also holds all the way through, which it did not: the metadata pass
   reaches aria2's `Complete` the moment the *torrent file* arrives, and every
