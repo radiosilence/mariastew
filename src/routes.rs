@@ -328,9 +328,10 @@ fn is_magnet(s: &str) -> bool {
     s.starts_with("magnet:?")
 }
 
-/// aria2's answer for a gid it holds in no list at all.
+/// aria2's answer for a gid it holds in no list at all, in either of its two
+/// wordings: one once the gid itself has been freed, one while it lingers.
 fn is_not_found(message: &str) -> bool {
-    message.ends_with("is not found")
+    message.ends_with("is not found") || message.starts_with("No such download")
 }
 
 fn is_already_registered(message: &str) -> bool {
@@ -787,18 +788,39 @@ pub async fn resume(State(state): State<AppState>, Path(gid): Path<String>) -> A
 async fn delete_partial(state: &AppState, status: &Download) {
     let mut deleted = Vec::new();
     for f in &status.files {
-        if state.config.resolve_existing(&f.path).await.is_none() {
-            // Includes every deselected file that never reached the disk.
-            continue;
+        if remove_contained(state, &f.path).await {
+            let _ = tokio::fs::remove_file(format!("{}.aria2", f.path)).await;
+            deleted.push(std::path::PathBuf::from(&f.path));
         }
-        if let Err(e) = tokio::fs::remove_file(&f.path).await {
-            tracing::warn!(path = %f.path, error = %e, "failed to delete partial file");
-            continue;
-        }
-        let _ = tokio::fs::remove_file(format!("{}.aria2", f.path)).await;
-        deleted.push(std::path::PathBuf::from(&f.path));
+    }
+    // A multi-file torrent's control file sits beside its tree, named for the
+    // torrent, rather than beside any one file. An unresolved magnet has
+    // written none.
+    if !status.is_metadata() {
+        let control = std::path::Path::new(&status.dir).join(format!("{}.aria2", status.name()));
+        remove_contained(state, &control.to_string_lossy()).await;
     }
     remove_emptied_dirs(state, std::path::Path::new(&status.dir), &deleted).await;
+}
+
+/// Unlink `path` if it exists and is inside a root. A path that was never
+/// written is skipped quietly — every deselected file that never arrived is
+/// one — and one that exists outside every root is refused out loud.
+async fn remove_contained(state: &AppState, path: &str) -> bool {
+    if tokio::fs::symlink_metadata(path).await.is_err() {
+        return false;
+    }
+    if state.config.resolve_existing(path).await.is_none() {
+        tracing::warn!(%path, "refusing to delete a path outside any root");
+        return false;
+    }
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => true,
+        Err(e) => {
+            tracing::warn!(%path, error = %e, "failed to delete partial file");
+            false
+        }
+    }
 }
 
 /// Remove the directories between each deleted file and `dir` that are now
@@ -847,18 +869,13 @@ const CLEAR_POLL: Duration = Duration::from_millis(100);
 /// behind.
 ///
 /// The two removal calls apply to different downloads and each refuses the
-/// other's: `remove` stops one that is still running, `removeDownloadResult`
-/// discards one that has already stopped. Every errored row is the second kind
-/// and so is a torrent aria2 is no longer seeding, so the single `remove` this
-/// used to start with failed outright and the handler gave up before reaching
-/// the call that would have worked — the row stayed, and every later press
-/// failed the same way, which is what "the button does nothing" was.
-///
-/// aria2 is also not finished the instant `remove` returns: the download moves
-/// to the stopped list first, and `removeDownloadResult` refuses it until it
-/// arrives. So what decides the outcome here is not whether a call succeeded
-/// but whether the gid is still in a list the page reads — the same question
-/// the row on screen is asking, and the answer this returns.
+/// other's: `forceRemove` stops one that is still running,
+/// `removeDownloadResult` discards one that has already stopped, which every
+/// errored row and every torrent aria2 is no longer seeding is. A stopped
+/// download also reaches the stopped list a moment after `forceRemove`
+/// returns, and `removeDownloadResult` refuses it until then. So the outcome
+/// is decided by whether aria2 still answers `tellStatus` for the gid at all,
+/// asked after each discard attempt.
 async fn clear(state: &AppState, gid: &str, status: &Download) -> bool {
     if !status.is_stopped()
         && let Err(e) = state.aria2.remove(gid).await
@@ -1255,7 +1272,8 @@ mod tests {
         let _ = tokio::fs::remove_dir_all(&root).await;
         let episode = root.join("Show/Season 1/ep01.mkv");
         let neighbour = root.join("Other/keep.mkv");
-        for f in [&episode, &neighbour] {
+        let control = root.join("Show.aria2");
+        for f in [&episode, &neighbour, &control] {
             tokio::fs::create_dir_all(f.parent().unwrap())
                 .await
                 .unwrap();
@@ -1279,6 +1297,7 @@ mod tests {
         let download = Download {
             dir: root.to_string_lossy().into_owned(),
             files: vec![file(&episode), file(&root.join("Show/never-arrived.nfo"))],
+            bittorrent_name: Some("Show".to_string()),
             ..Download::fixture()
         };
 
@@ -1299,6 +1318,7 @@ mod tests {
     #[test]
     fn not_found_is_recognised_by_aria2s_own_wording() {
         assert!(is_not_found("GID 2089b05ecca3d829 is not found"));
+        assert!(is_not_found("No such download for GID#2089b05ecca3d829"));
         assert!(!is_not_found("connection refused"));
     }
 
