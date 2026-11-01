@@ -1363,7 +1363,8 @@ mod tests {
     /// side of it is otherwise silent until someone presses the button.
     #[test]
     fn every_ms_helper_a_template_calls_is_defined() {
-        const SCRIPT: &str = include_str!("../web/ms.ts");
+        const BUNDLE: &str = include_str!(concat!("../assets/", env!("APP_JS_FILENAME")));
+        const SOURCE: &str = include_str!("../web/ms.ts");
         let page = Page {
             roots: vec![],
             rows: vec![],
@@ -1390,9 +1391,14 @@ mod tests {
             "no ms.* helper calls found at all: {page}"
         );
         for name in called {
+            let call = format!("{name}(");
             assert!(
-                SCRIPT.contains(&format!("{name}(")),
+                SOURCE.contains(&call),
                 "a template calls ms.{name}() but web/ms.ts does not define it"
+            );
+            assert!(
+                BUNDLE.contains(&call),
+                "web/ms.ts defines ms.{name}() but the committed bundle does not; run `mise run js`"
             );
         }
     }

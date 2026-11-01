@@ -237,8 +237,8 @@ the old one; `build.rs` finds it and `main.rs` serves it. `main.ts` imports
 `ms.ts` before Datastar, and ES modules evaluate in import order, so `ms.*`
 exists before Datastar first scans the document.
 
-Datastar itself is vendored under `web/vendor/` with its type declarations,
-because npm carries only its pre-1.0 betas. To move to another release:
+Datastar itself is vendored under `web/vendor/`, because npm carries only its
+pre-1.0 betas. To move to another release:
 
 ```sh
 DATASTAR_VERSION=v1.0.4 mise run datastar

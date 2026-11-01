@@ -27,14 +27,12 @@ run = [
 
 [tasks."datastar"]
 description = "Vendor a Datastar release into web/vendor (then `mise run js`)"
-# npm only carries Datastar's pre-1.0 betas, so the release bundle and its
-# types come from the tagged source instead.
+# npm only carries Datastar's pre-1.0 betas, so the release bundle comes from
+# the tagged source instead.
 run = """
 set -eu
 v="${DATASTAR_VERSION:?set DATASTAR_VERSION, e.g. v1.0.4}"
-for f in datastar.js datastar.d.ts; do
-  curl -fsSL "https://cdn.jsdelivr.net/gh/starfederation/datastar@$v/bundles/$f" -o "web/vendor/$f"
-done
+curl -fsSL "https://cdn.jsdelivr.net/gh/starfederation/datastar@$v/bundles/datastar.js" -o web/vendor/datastar.js
 """
 
 [tasks."typecheck"]
