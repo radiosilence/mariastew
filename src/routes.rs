@@ -263,10 +263,16 @@ pub async fn stream(
             let snapshot = tokio::select! {
                 next = viewer.next() => match next {
                     Some(snapshot) => snapshot,
-                    None => break,
+                    // Shutting down. Aborted rather than ended: Datastar
+                    // retries a stream that errors within a second, and one
+                    // that ends cleanly only when the page's watchdog fires.
+                    None => {
+                        yield Err(std::io::Error::other("shutting down"));
+                        break;
+                    }
                 },
                 _ = beat.tick() => {
-                    yield Ok::<_, Infallible>(heartbeat());
+                    yield Ok::<_, std::io::Error>(heartbeat());
                     continue;
                 }
             };
@@ -290,12 +296,12 @@ pub async fn stream(
                 Some(rows) => {
                     let any = !rows.is_empty();
                     for row in rows {
-                        yield Ok::<_, Infallible>(patch_elements(&row.html));
+                        yield Ok::<_, std::io::Error>(patch_elements(&row.html));
                     }
                     any
                 }
                 None => {
-                    yield Ok::<_, Infallible>(patch_elements(&view.full));
+                    yield Ok::<_, std::io::Error>(patch_elements(&view.full));
                     true
                 }
             };
@@ -1142,6 +1148,30 @@ mod tests {
         assert!(
             !html.contains("dl-"),
             "a download row rendered despite aria2 being unreachable: {html}"
+        );
+    }
+
+    /// Datastar retries a stream whose body errors within a second, and one
+    /// that ends cleanly only when the page's watchdog fires.
+    #[tokio::test]
+    async fn shutting_down_aborts_the_stream_rather_than_ending_it() {
+        let state = state(String::new());
+        state.poll.close();
+        let session = crate::auth::session::Session {
+            id: "s".to_string(),
+            sub: "tester".to_string(),
+            expires: std::time::Instant::now() + Duration::from_secs(60),
+        };
+        let response = stream(State(state), CurrentSession(session)).await;
+        let body = tokio::time::timeout(
+            Duration::from_secs(1),
+            axum::body::to_bytes(response.into_body(), usize::MAX),
+        )
+        .await
+        .expect("the stream ends once closed");
+        assert!(
+            body.is_err(),
+            "the stream ended cleanly instead of aborting"
         );
     }
 

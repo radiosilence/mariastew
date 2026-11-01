@@ -242,22 +242,41 @@ async fn main() -> anyhow::Result<()> {
     let app = app
         .layer(axum::middleware::from_fn(security_headers))
         .layer(tower_http::trace::TraceLayer::new_for_http())
-        .with_state(state);
+        .with_state(state.clone());
 
+    let term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!(%bind_addr, "listening");
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown())
+        .with_graceful_shutdown(shutdown(term, state.poll.clone()))
         .await?;
+
+    // A removal runs detached from its request, and one cut off between
+    // stopping the download and deleting its partial files leaves files that
+    // nothing will find again. `resume` covers an interrupted add; nothing
+    // covers this, so it is given a moment to finish.
+    let deadline = tokio::time::Instant::now() + CLEARING_GRACE;
+    while !state.clearing.is_empty() && tokio::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
     Ok(())
 }
 
-/// A pod being replaced gets its in-flight requests finished. The streams are
-/// long-lived by design, so this does not wait for them — the client reconnects
-/// to the new pod, which is the same thing that happens on any restart.
-async fn shutdown() {
-    let _ = tokio::signal::ctrl_c().await;
+/// How long shutdown waits for removals already under way.
+const CLEARING_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// SIGTERM is what Kubernetes sends, and as PID 1 in the container the process
+/// has no default handler for it; Ctrl-C is for a terminal. In-flight
+/// requests are finished and every stream is aborted, since a stream never
+/// finishes on its own and an aborted one is retried within a second, against
+/// the new pod.
+async fn shutdown(mut term: tokio::signal::unix::Signal, poll: poll::Poll) {
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {}
+        _ = term.recv() => {}
+    }
     tracing::info!("shutting down");
+    poll.close();
 }
 
 #[cfg(test)]
