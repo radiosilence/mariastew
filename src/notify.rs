@@ -273,8 +273,10 @@ async fn send(state: &AppState, text: &str) {
         "text": text,
         "parse_mode": "HTML",
     });
-    if let Err(e) = state.http.post(&url).json(&body).send().await {
-        tracing::warn!(error = %e, "failed to send telegram notification");
+    // `without_url`: the URL carries the bot token.
+    let sent = state.http.post(&url).json(&body).send().await;
+    if let Err(e) = sent.and_then(reqwest::Response::error_for_status) {
+        tracing::warn!(error = %e.without_url(), "failed to send telegram notification");
     }
 }
 
