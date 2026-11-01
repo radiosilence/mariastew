@@ -710,6 +710,8 @@ impl Aria2 {
         let response: RpcResponse<T> = serde_json::from_slice(&bytes)
             .map_err(|e| AppError::Upstream(format!("{method}: {e}")))?;
         if let Some(error) = response.error {
+            // aria2's own wording, unprefixed: callers recognise refusals
+            // by it ("is already registered", "No such download").
             return Err(AppError::Upstream(error.message));
         }
         response.result.ok_or_else(|| {
