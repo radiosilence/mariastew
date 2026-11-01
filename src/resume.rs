@@ -30,11 +30,11 @@
 //! publishes. It costs one `getOption` per paused download per tick, and only
 //! paused ones — a queue that is running asks aria2 nothing extra.
 
-use std::sync::Arc;
+use std::collections::HashSet;
 
 use crate::aria2::{Download, Status};
 use crate::routes::finish_add_inner;
-use crate::state::AppState;
+use crate::state::{AppState, Claim};
 
 /// Watches the poll for downloads with nobody finishing them.
 ///
@@ -45,45 +45,53 @@ use crate::state::AppState;
 pub fn spawn(state: AppState) {
     tokio::spawn(async move {
         let mut poll = state.poll.subscribe();
+        let mut selected = HashSet::new();
         while poll.changed().await.is_ok() {
             let downloads = poll.borrow_and_update().downloads.clone();
-            reconcile(&state, &downloads).await;
+            reconcile(&state, &downloads, &mut selected).await;
         }
     });
 }
 
-async fn reconcile(state: &AppState, downloads: &Arc<Vec<Download>>) {
-    for d in downloads.iter() {
-        if d.status != Status::Paused || state.adding.contains(&d.gid) {
+/// `selected` holds the paused downloads already known to carry a selection.
+/// Nothing removes `select-file` once it is set, so each one is asked about
+/// once rather than on every tick for as long as it stays paused.
+async fn reconcile(state: &AppState, downloads: &[Download], selected: &mut HashSet<String>) {
+    let live: HashSet<&str> = downloads.iter().map(|d| d.gid.as_str()).collect();
+    selected.retain(|gid| live.contains(gid.as_str()));
+
+    for d in downloads {
+        if d.status != Status::Paused || selected.contains(&d.gid) || state.adding.contains(&d.gid)
+        {
             continue;
         }
         match state.aria2.has_selection(&d.gid).await {
             // Someone pressed pause. Theirs to undo.
-            Ok(true) => continue,
+            Ok(true) => {
+                selected.insert(d.gid.clone());
+                continue;
+            }
             Ok(false) => {}
             Err(e) => {
                 tracing::warn!(gid = %d.gid, error = %e, "resume: could not read the selection");
                 continue;
             }
         }
-        tokio::spawn(adopt(state.clone(), d.gid.clone(), d.dir.clone()));
+        // Claimed before the task is spawned, so the next tick cannot adopt
+        // the same download a second time before the task has started.
+        let claim = state.adding.claim(&d.gid);
+        tokio::spawn(adopt(state.clone(), claim, d.gid.clone(), d.dir.clone()));
     }
 }
 
 /// One unfinished add, carried the rest of the way.
-///
-/// The claim is taken here rather than left to `finish_add_inner`, because the
-/// gap between spawning this and that function reaching its own claim is a gap
-/// the next tick can arrive in — and two tasks narrowing one download would
-/// race to release it.
 ///
 /// The release comes first and is fatal to this attempt if it fails: a paused
 /// magnet fetches no metadata, so there would be nothing for the finish below
 /// to wait for and it would spend ten minutes proving it. `sub` is the audit
 /// field on the "starting download" line, and nobody asked for this one — the
 /// restart did.
-async fn adopt(state: AppState, gid: String, dir: String) {
-    let claim = state.adding.claim(&gid);
+async fn adopt(state: AppState, claim: Claim, gid: String, dir: String) {
     tracing::info!(%gid, %dir, "resume: finishing an add nobody was finishing");
     state
         .activity
@@ -140,6 +148,22 @@ mod tests {
             AxumState(mock): AxumState<Mock>,
             Json(body): Json<serde_json::Value>,
         ) -> Json<serde_json::Value> {
+            let result = match body["method"].as_str().unwrap_or_default() {
+                "system.multicall" => body["params"][0]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|call| serde_json::json!([answer(&mock, call)]))
+                    .collect(),
+                _ => answer(
+                    &mock,
+                    &serde_json::json!({"methodName": body["method"], "params": body["params"]}),
+                ),
+            };
+            Json(serde_json::json!({"jsonrpc": "2.0", "id": "mariastew", "result": result}))
+        }
+
+        fn answer(mock: &Mock, body: &serde_json::Value) -> serde_json::Value {
             let gid = body["params"][0].as_str().unwrap_or_default().to_string();
             // aria2 reports a released download as running, so the mock has to
             // as well: `finish_add_inner` reads the status back to decide
@@ -147,7 +171,7 @@ mod tests {
             // "paused" would let a double release through unnoticed.
             let released = |g: &str| mock.unpaused.lock().unwrap().iter().any(|u| u == g);
             let live = |g: &str| if released(g) { "active" } else { "paused" };
-            let result = match body["method"].as_str().unwrap_or_default() {
+            match body["methodName"].as_str().unwrap_or_default() {
                 "aria2.tellActive" | "aria2.tellStopped" => serde_json::json!([]),
                 "aria2.tellWaiting" => serde_json::json!([download(
                     "stranded-gid",
@@ -197,8 +221,7 @@ mod tests {
                     serde_json::json!("OK")
                 }
                 other => panic!("unexpected aria2 method in test: {other}"),
-            };
-            Json(serde_json::json!({"jsonrpc": "2.0", "id": "mariastew", "result": result}))
+            }
         }
 
         fn download(gid: &str, status: &str, files: serde_json::Value) -> serde_json::Value {

@@ -285,6 +285,22 @@ function dispatch(method: string, params: unknown[]): unknown {
     }
     case "aria2.changeOption":
       return "OK";
+    // Every paused download here was paused by hand, so none is an unfinished add.
+    case "aria2.getOption":
+      return { "select-file": "1" };
+    case "system.multicall":
+      return (params[0] as { methodName: string; params: unknown[] }[]).map(
+        (call) => {
+          try {
+            return [dispatch(call.methodName, call.params)];
+          } catch (e) {
+            return {
+              faultCode: 1,
+              faultString: String(e instanceof Error ? e.message : e),
+            };
+          }
+        },
+      );
     default:
       throw new Error(`Unhandled method: ${method}`);
   }

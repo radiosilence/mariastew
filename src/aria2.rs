@@ -12,7 +12,10 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use std::collections::HashMap;
+
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 
 use crate::error::{AppError, AppResult};
 
@@ -25,6 +28,36 @@ use crate::error::{AppError, AppResult};
 /// a sidecar that has stopped answering, which is worth saying rather than
 /// waiting out.
 const RPC_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The fields `RawDownload` reads, passed as `keys` so aria2 leaves out the
+/// rest — `bitfield` above all, a hex string as long as the torrent has
+/// pieces, for every download on every tick.
+const KEYS: &[&str] = &[
+    "gid",
+    "status",
+    "totalLength",
+    "completedLength",
+    "uploadLength",
+    "downloadSpeed",
+    "uploadSpeed",
+    "connections",
+    "numSeeders",
+    "errorMessage",
+    "errorCode",
+    "dir",
+    "files",
+    "pieceLength",
+    "numPieces",
+    "verifiedLength",
+    "verifyIntegrityPending",
+    "infoHash",
+    "bittorrent",
+    "followedBy",
+];
+
+/// How many waiting and stopped downloads are listed. aria2's own default for
+/// `--max-download-result`, so the stopped list is normally read whole.
+const LIST_LIMIT: u32 = 1000;
 
 #[derive(Clone)]
 pub struct Aria2 {
@@ -559,16 +592,11 @@ impl RawDownload {
     }
 }
 
+#[cfg(test)]
 fn parse_download(value: serde_json::Value) -> AppResult<Download> {
     let raw: RawDownload =
         serde_json::from_value(value).map_err(|e| AppError::Upstream(format!("aria2: {e}")))?;
     raw.into_download()
-}
-
-fn parse_downloads(value: serde_json::Value) -> AppResult<Vec<Download>> {
-    let raws: Vec<RawDownload> =
-        serde_json::from_value(value).map_err(|e| AppError::Upstream(format!("aria2: {e}")))?;
-    raws.into_iter().map(RawDownload::into_download).collect()
 }
 
 #[derive(Deserialize)]
@@ -576,12 +604,33 @@ struct RpcError {
     message: String,
 }
 
-#[derive(Deserialize, Default)]
-struct RpcResponse {
-    #[serde(default)]
-    result: Option<serde_json::Value>,
-    #[serde(default)]
+#[derive(Deserialize)]
+struct RpcResponse<T> {
+    result: Option<T>,
     error: Option<RpcError>,
+}
+
+/// One call's answer inside a `system.multicall`: a one-element array holding
+/// the result, or a fault object in its place.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum MulticallResult {
+    Ok([Vec<RawDownload>; 1]),
+    Fault {
+        #[serde(rename = "faultString")]
+        fault_string: String,
+    },
+}
+
+impl MulticallResult {
+    fn into_downloads(self) -> AppResult<Vec<Download>> {
+        match self {
+            MulticallResult::Ok([raws]) => {
+                raws.into_iter().map(RawDownload::into_download).collect()
+            }
+            MulticallResult::Fault { fault_string } => Err(AppError::Upstream(fault_string)),
+        }
+    }
 }
 
 impl Aria2 {
@@ -593,24 +642,26 @@ impl Aria2 {
     }
 
     /// One JSON-RPC round trip. Every method below is this plus a shape.
-    async fn call(&self, method: &str, params: serde_json::Value) -> AppResult<serde_json::Value> {
-        let full_method = format!("aria2.{method}");
-        tracing::debug!(method = %full_method, "aria2 rpc call");
+    async fn call<T: DeserializeOwned>(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+    ) -> AppResult<T> {
+        tracing::debug!(method, "aria2 rpc call");
         let body = serde_json::json!({
             "jsonrpc": "2.0",
             "id": "mariastew",
-            "method": full_method,
+            "method": method,
             "params": params,
         });
-        let response = self
+        let response: RpcResponse<T> = self
             .http
             .post(self.url.as_str())
             .timeout(RPC_TIMEOUT)
             .json(&body)
             .send()
             .await
-            .map_err(|e| AppError::Upstream(e.to_string()))?;
-        let response: RpcResponse = response
+            .map_err(|e| AppError::Upstream(e.to_string()))?
             .json()
             .await
             .map_err(|e| AppError::Upstream(e.to_string()))?;
@@ -623,46 +674,49 @@ impl Aria2 {
     }
 
     /// Returns the gid. `options` is passed through as aria2's option object,
-    /// which is how the caller asks for a metadata-only pass or names the
-    /// destination and the wanted file indices.
+    /// which is how the caller names the destination and the wanted file
+    /// indices.
     pub async fn add_uri(&self, uri: &str, options: serde_json::Value) -> AppResult<String> {
-        let result = self
-            .call("addUri", serde_json::json!([[uri], options]))
-            .await?;
-        serde_json::from_value(result).map_err(|e| AppError::Upstream(format!("aria2: {e}")))
+        self.call("aria2.addUri", serde_json::json!([[uri], options]))
+            .await
     }
 
     pub async fn tell_status(&self, gid: &str) -> AppResult<Download> {
-        let result = self.call("tellStatus", serde_json::json!([gid])).await?;
-        parse_download(result)
+        self.call::<RawDownload>("aria2.tellStatus", serde_json::json!([gid, KEYS]))
+            .await?
+            .into_download()
     }
 
-    pub async fn tell_active(&self) -> AppResult<Vec<Download>> {
-        let result = self.call("tellActive", serde_json::json!([])).await?;
-        parse_downloads(result)
-    }
-
-    pub async fn tell_waiting(&self, offset: i32, num: i32) -> AppResult<Vec<Download>> {
-        let result = self
-            .call("tellWaiting", serde_json::json!([offset, num]))
+    /// Every download aria2 holds — active, then waiting, then stopped — in
+    /// one round trip.
+    pub async fn tell_all(&self) -> AppResult<[Vec<Download>; 3]> {
+        let [active, waiting, stopped]: [MulticallResult; 3] = self
+            .call(
+                "system.multicall",
+                serde_json::json!([[
+                    {"methodName": "aria2.tellActive", "params": [KEYS]},
+                    {"methodName": "aria2.tellWaiting", "params": [0, LIST_LIMIT, KEYS]},
+                    {"methodName": "aria2.tellStopped", "params": [-1, LIST_LIMIT, KEYS]},
+                ]]),
+            )
             .await?;
-        parse_downloads(result)
-    }
-
-    pub async fn tell_stopped(&self, offset: i32, num: i32) -> AppResult<Vec<Download>> {
-        let result = self
-            .call("tellStopped", serde_json::json!([offset, num]))
-            .await?;
-        parse_downloads(result)
+        // A negative offset reads from the newest end, so a full list drops
+        // the oldest results rather than the ones just finished. Reversed back
+        // to aria2's own oldest-first order.
+        let mut stopped = stopped.into_downloads()?;
+        stopped.reverse();
+        Ok([active.into_downloads()?, waiting.into_downloads()?, stopped])
     }
 
     pub async fn pause(&self, gid: &str) -> AppResult<()> {
-        self.call("pause", serde_json::json!([gid])).await?;
+        self.call::<String>("aria2.pause", serde_json::json!([gid]))
+            .await?;
         Ok(())
     }
 
     pub async fn unpause(&self, gid: &str) -> AppResult<()> {
-        self.call("unpause", serde_json::json!([gid])).await?;
+        self.call::<String>("aria2.unpause", serde_json::json!([gid]))
+            .await?;
         Ok(())
     }
 
@@ -676,14 +730,15 @@ impl Aria2 {
     /// aria2 refuses this for a download that is already stopped, which is what
     /// `remove_download_result` is for.
     pub async fn remove(&self, gid: &str) -> AppResult<()> {
-        self.call("forceRemove", serde_json::json!([gid])).await?;
+        self.call::<String>("aria2.forceRemove", serde_json::json!([gid]))
+            .await?;
         Ok(())
     }
 
     /// Clears the corpse out of the stopped list. Without this a removed
     /// download stays in `tellStopped` and the list fills up with them.
     pub async fn remove_download_result(&self, gid: &str) -> AppResult<()> {
-        self.call("removeDownloadResult", serde_json::json!([gid]))
+        self.call::<String>("aria2.removeDownloadResult", serde_json::json!([gid]))
             .await?;
         Ok(())
     }
@@ -695,7 +750,7 @@ impl Aria2 {
     /// aria2 restarts the download internally to apply it; no second gid, no
     /// caller-visible interruption.
     pub async fn change_option(&self, gid: &str, options: serde_json::Value) -> AppResult<()> {
-        self.call("changeOption", serde_json::json!([gid, options]))
+        self.call::<String>("aria2.changeOption", serde_json::json!([gid, options]))
             .await?;
         Ok(())
     }
@@ -713,11 +768,10 @@ impl Aria2 {
     /// `getOption` entirely, which is why this answers a bool rather than
     /// handing back a string nobody would know how to read.
     pub async fn has_selection(&self, gid: &str) -> AppResult<bool> {
-        let options = self.call("getOption", serde_json::json!([gid])).await?;
-        Ok(options
-            .get("select-file")
-            .and_then(|v| v.as_str())
-            .is_some_and(|v| !v.is_empty()))
+        let options: HashMap<String, String> = self
+            .call("aria2.getOption", serde_json::json!([gid]))
+            .await?;
+        Ok(options.get("select-file").is_some_and(|v| !v.is_empty()))
     }
 }
 
@@ -764,6 +818,36 @@ mod tests {
         assert!(d.files[0].selected);
         assert_eq!(d.files[1].index, 2);
         assert!(!d.files[1].selected);
+    }
+
+    /// Every field `RawDownload` reads has to be asked for by name, or the poll
+    /// silently reads its default. A full response filtered down to `KEYS`
+    /// must parse to the same download as the unfiltered one.
+    #[test]
+    fn keys_cover_every_field_a_download_is_read_from() {
+        let full = serde_json::json!({
+            "gid": "abc123", "status": "active", "totalLength": "1000",
+            "completedLength": "500", "uploadLength": "250", "downloadSpeed": "10",
+            "uploadSpeed": "5", "connections": "3", "numSeeders": "2",
+            "errorMessage": "m", "errorCode": "9", "dir": "/downloads",
+            "files": [{"index": "1", "path": "/downloads/a.mkv", "length": "1000",
+                       "completedLength": "500", "selected": "true"}],
+            "pieceLength": "16", "numPieces": "63", "verifiedLength": "100",
+            "verifyIntegrityPending": "true", "infoHash": "ff",
+            "bittorrent": {"info": {"name": "A"}}, "followedBy": ["def456"],
+            "bitfield": "ffff", "following": "x", "belongsTo": "y",
+        });
+        let filtered: serde_json::Map<_, _> = full
+            .as_object()
+            .unwrap()
+            .iter()
+            .filter(|(k, _)| KEYS.contains(&k.as_str()))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        assert_eq!(
+            format!("{:?}", parse_download(full.clone()).unwrap()),
+            format!("{:?}", parse_download(filtered.into()).unwrap()),
+        );
     }
 
     #[test]
