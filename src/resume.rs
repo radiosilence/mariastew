@@ -27,8 +27,8 @@
 //!   boot has long since run.
 //!
 //! So this reconciles continuously, off the snapshots the poller already
-//! publishes. It costs one `getOption` per paused download per tick, and only
-//! paused ones — a queue that is running asks aria2 nothing extra.
+//! publishes. It costs one `getOption` per paused download, asked once while
+//! it stays paused — a queue that is running asks aria2 nothing extra.
 
 use std::collections::HashSet;
 
