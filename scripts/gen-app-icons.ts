@@ -67,15 +67,7 @@ const scratch = mkdtempSync(join(tmpdir(), "mariastew-icons-"));
 function render(svgText: string, size: number, out: string) {
   const input = join(scratch, "in.svg");
   writeFileSync(input, svgText);
-  execFileSync("rsvg-convert", [
-    input,
-    "-w",
-    String(size),
-    "-h",
-    String(size),
-    "-o",
-    out,
-  ]);
+  execFileSync("rsvg-convert", [input, "-w", String(size), "-h", String(size), "-o", out]);
 }
 
 /** ICO is a 6-byte header, one 16-byte directory entry per image, then the
@@ -110,11 +102,7 @@ writeFileSync(join(assets, "icon.svg"), svg);
 render(fullBleed(APPLE_INSET), 180, join(assets, "apple-touch-icon.png"));
 for (const size of [192, 512]) {
   render(svg, size, join(assets, `icon-${size}.png`));
-  render(
-    fullBleed(MASKABLE_SAFE),
-    size,
-    join(assets, `icon-${size}-maskable.png`),
-  );
+  render(fullBleed(MASKABLE_SAFE), size, join(assets, `icon-${size}-maskable.png`));
 }
 
 const frames = ICO_SIZES.map((size) => {

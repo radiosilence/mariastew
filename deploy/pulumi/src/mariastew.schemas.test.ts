@@ -1,17 +1,12 @@
 import { describe, expect, it } from "vitest";
-import {
-  MariastewConfSchema,
-  MariastewRootSchema,
-} from "./mariastew.schemas.ts";
+import { MariastewConfSchema, MariastewRootSchema } from "./mariastew.schemas.ts";
 
 const image = { repository: "ghcr.io/radiosilence/mariastew", tag: "0.1.0" };
 const roots = [{ name: "tv", hostPath: "/mnt/kontent/tv" }];
 
 describe("MariastewRootSchema", () => {
   it("rejects a relative host path, which would mount the wrong thing silently", () => {
-    expect(() =>
-      MariastewRootSchema.parse({ name: "tv", hostPath: "mnt/tv" }),
-    ).toThrow();
+    expect(() => MariastewRootSchema.parse({ name: "tv", hostPath: "mnt/tv" })).toThrow();
   });
 
   it("rejects an unknown key rather than stripping it", () => {
