@@ -170,37 +170,54 @@ const ASSETS: [(&str, &str, &[u8]); 12] = [
     ),
 ];
 
-/// The script bundle's name changes with its content, so it is cached for
-/// good. Everything else keeps its name across deploys and is revalidated
-/// against an ETag instead, so a deploy's new stylesheet is never paired with
-/// the old one from cache.
+/// How an asset may be cached. The script bundle's name changes with its
+/// content, so it is cached for good. Everything else keeps its name across
+/// deploys and is revalidated against an ETag instead, so a deploy's new
+/// stylesheet is never paired with the old one from cache.
+fn cache_headers(path: &str, body: &[u8]) -> (&'static str, Option<String>) {
+    if path == APP_JS_PATH {
+        return ("public, max-age=31536000, immutable", None);
+    }
+    use std::hash::{DefaultHasher, Hash as _, Hasher as _};
+    let mut hasher = DefaultHasher::new();
+    body.hash(&mut hasher);
+    ("no-cache", Some(format!("\"{:016x}\"", hasher.finish())))
+}
+
+/// `If-None-Match` matches under weak comparison (RFC 9110 13.1.2): any entry
+/// of a list, `*`, and a `W/` validator, which is what an ingress that
+/// compresses the response turns a strong one into.
+fn none_match(header: &axum::http::HeaderValue, etag: &str) -> bool {
+    let Ok(header) = header.to_str() else {
+        return false;
+    };
+    header.split(',').map(str::trim).any(|candidate| {
+        candidate == "*" || candidate.strip_prefix("W/").unwrap_or(candidate) == etag
+    })
+}
+
 async fn asset(
     headers: axum::http::HeaderMap,
-    path: &'static str,
     content_type: &'static str,
+    cache_control: &'static str,
+    etag: Option<String>,
     body: &'static [u8],
 ) -> Response {
-    if path == APP_JS_PATH {
+    let Some(etag) = etag else {
         return (
             [
                 (header::CONTENT_TYPE, content_type),
-                (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+                (header::CACHE_CONTROL, cache_control),
             ],
             body,
         )
             .into_response();
-    }
-    let etag = format!("\"{:016x}\"", {
-        use std::hash::{DefaultHasher, Hash as _, Hasher as _};
-        let mut hasher = DefaultHasher::new();
-        body.hash(&mut hasher);
-        hasher.finish()
-    });
+    };
     let fresh = headers
         .get(header::IF_NONE_MATCH)
-        .is_some_and(|v| v.as_bytes() == etag.as_bytes());
+        .is_some_and(|v| none_match(v, &etag));
     let common = [
-        (header::CACHE_CONTROL, "no-cache".to_string()),
+        (header::CACHE_CONTROL, cache_control.to_string()),
         (header::ETAG, etag),
     ];
     if fresh {
@@ -262,9 +279,10 @@ async fn main() -> anyhow::Result<()> {
         .merge(auth::routes::router())
         .route("/healthz", get(|| async { "ok" }));
     for (path, content_type, body) in ASSETS {
+        let (cache_control, etag) = cache_headers(path, body);
         app = app.route(
             path,
-            get(move |headers| asset(headers, path, content_type, body)),
+            get(move |headers| asset(headers, content_type, cache_control, etag.clone(), body)),
         );
     }
     let app = app
@@ -294,21 +312,36 @@ mod tests {
 
     #[tokio::test]
     async fn the_hashed_bundle_is_immutable_and_everything_else_revalidates() {
-        let bundle = asset(Default::default(), APP_JS_PATH, "text/javascript", b"js").await;
+        let serve = |headers, path, body: &'static [u8]| {
+            let (cache_control, etag) = cache_headers(path, body);
+            asset(headers, "text/plain", cache_control, etag, body)
+        };
+        let bundle = serve(Default::default(), APP_JS_PATH, b"js").await;
         assert_eq!(
             bundle.headers()[header::CACHE_CONTROL],
             "public, max-age=31536000, immutable"
         );
+        assert!(!bundle.headers().contains_key(header::ETAG));
 
-        let css = asset(Default::default(), "/assets/app.css", "text/css", b"css").await;
+        let css = serve(Default::default(), "/assets/app.css", b"css").await;
         assert_eq!(css.headers()[header::CACHE_CONTROL], "no-cache");
-        let etag = css.headers()[header::ETAG].clone();
+        let etag = css.headers()[header::ETAG].to_str().unwrap().to_string();
+
+        for sent in [
+            etag.clone(),
+            format!("W/{etag}"),
+            format!("\"other\", {etag}"),
+            "*".to_string(),
+        ] {
+            let mut headers = axum::http::HeaderMap::new();
+            headers.insert(header::IF_NONE_MATCH, sent.parse().unwrap());
+            let again = serve(headers, "/assets/app.css", b"css").await;
+            assert_eq!(again.status(), StatusCode::NOT_MODIFIED, "{sent}");
+        }
 
         let mut headers = axum::http::HeaderMap::new();
-        headers.insert(header::IF_NONE_MATCH, etag);
-        let again = asset(headers.clone(), "/assets/app.css", "text/css", b"css").await;
-        assert_eq!(again.status(), StatusCode::NOT_MODIFIED);
-        let changed = asset(headers, "/assets/app.css", "text/css", b"new css").await;
+        headers.insert(header::IF_NONE_MATCH, etag.parse().unwrap());
+        let changed = serve(headers, "/assets/app.css", b"new css").await;
         assert_eq!(changed.status(), StatusCode::OK);
     }
 
