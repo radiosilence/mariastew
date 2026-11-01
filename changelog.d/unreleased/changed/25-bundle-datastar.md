@@ -1,0 +1,1 @@
+- **Datastar 1.0.4, bundled.** The page loads one script instead of two, and picks up Datastar's fixes for request-cancellation races.
