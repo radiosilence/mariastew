@@ -25,7 +25,7 @@ use std::sync::Arc;
 use std::{fs, path::Path};
 
 use axum::Router;
-use axum::http::header;
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
@@ -170,6 +170,63 @@ const ASSETS: [(&str, &str, &[u8]); 12] = [
     ),
 ];
 
+/// How an asset may be cached. The script bundle's name changes with its
+/// content, so it is cached for good. Everything else keeps its name across
+/// deploys and is revalidated against an ETag instead, so a deploy's new
+/// stylesheet is never paired with the old one from cache.
+fn cache_headers(path: &str, body: &[u8]) -> (&'static str, Option<String>) {
+    if path == APP_JS_PATH {
+        return ("public, max-age=31536000, immutable", None);
+    }
+    use std::hash::{DefaultHasher, Hash as _, Hasher as _};
+    let mut hasher = DefaultHasher::new();
+    body.hash(&mut hasher);
+    ("no-cache", Some(format!("\"{:016x}\"", hasher.finish())))
+}
+
+/// `If-None-Match` matches under weak comparison (RFC 9110 13.1.2): any entry
+/// of a list, `*`, and a `W/` validator, which is what an ingress that
+/// compresses the response turns a strong one into.
+fn none_match(header: &axum::http::HeaderValue, etag: &str) -> bool {
+    let Ok(header) = header.to_str() else {
+        return false;
+    };
+    header.split(',').map(str::trim).any(|candidate| {
+        candidate == "*" || candidate.strip_prefix("W/").unwrap_or(candidate) == etag
+    })
+}
+
+async fn asset(
+    headers: axum::http::HeaderMap,
+    content_type: &'static str,
+    cache_control: &'static str,
+    etag: Option<String>,
+    body: &'static [u8],
+) -> Response {
+    let Some(etag) = etag else {
+        return (
+            [
+                (header::CONTENT_TYPE, content_type),
+                (header::CACHE_CONTROL, cache_control),
+            ],
+            body,
+        )
+            .into_response();
+    };
+    let fresh = headers
+        .get(header::IF_NONE_MATCH)
+        .is_some_and(|v| none_match(v, &etag));
+    let common = [
+        (header::CACHE_CONTROL, cache_control.to_string()),
+        (header::ETAG, etag),
+    ];
+    if fresh {
+        (StatusCode::NOT_MODIFIED, common).into_response()
+    } else {
+        (common, [(header::CONTENT_TYPE, content_type)], body).into_response()
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -231,13 +288,11 @@ async fn main() -> anyhow::Result<()> {
         .merge(auth::routes::router())
         .route("/healthz", get(|| async { "ok" }));
     for (path, content_type, body) in ASSETS {
-        app =
-            app.route(
-                path,
-                get(move || async move {
-                    ([(header::CONTENT_TYPE, content_type)], body).into_response()
-                }),
-            );
+        let (cache_control, etag) = cache_headers(path, body);
+        app = app.route(
+            path,
+            get(move |headers| asset(headers, content_type, cache_control, etag.clone(), body)),
+        );
     }
     let app = app
         .layer(axum::middleware::from_fn(security_headers))
@@ -282,6 +337,41 @@ async fn shutdown(mut term: tokio::signal::unix::Signal, poll: poll::Poll) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn the_hashed_bundle_is_immutable_and_everything_else_revalidates() {
+        let serve = |headers, path, body: &'static [u8]| {
+            let (cache_control, etag) = cache_headers(path, body);
+            asset(headers, "text/plain", cache_control, etag, body)
+        };
+        let bundle = serve(Default::default(), APP_JS_PATH, b"js").await;
+        assert_eq!(
+            bundle.headers()[header::CACHE_CONTROL],
+            "public, max-age=31536000, immutable"
+        );
+        assert!(!bundle.headers().contains_key(header::ETAG));
+
+        let css = serve(Default::default(), "/assets/app.css", b"css").await;
+        assert_eq!(css.headers()[header::CACHE_CONTROL], "no-cache");
+        let etag = css.headers()[header::ETAG].to_str().unwrap().to_string();
+
+        for sent in [
+            etag.clone(),
+            format!("W/{etag}"),
+            format!("\"other\", {etag}"),
+            "*".to_string(),
+        ] {
+            let mut headers = axum::http::HeaderMap::new();
+            headers.insert(header::IF_NONE_MATCH, sent.parse().unwrap());
+            let again = serve(headers, "/assets/app.css", b"css").await;
+            assert_eq!(again.status(), StatusCode::NOT_MODIFIED, "{sent}");
+        }
+
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(header::IF_NONE_MATCH, etag.parse().unwrap());
+        let changed = serve(headers, "/assets/app.css", b"new css").await;
+        assert_eq!(changed.status(), StatusCode::OK);
+    }
 
     #[tokio::test]
     async fn every_response_carries_the_security_headers() {
