@@ -3,7 +3,7 @@
 # --release` — what the production Dockerfile runs — never sets. Kept as a
 # separate file rather than a build arg on the real Dockerfile so a mistake here
 # can never change what CI ships.
-FROM rust:1.97-alpine AS build
+FROM rust:alpine AS build
 
 RUN apk add --no-cache musl-dev
 WORKDIR /src

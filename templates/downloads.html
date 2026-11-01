@@ -4,13 +4,11 @@
      remove one, so a membership change is the one thing that needs the
      container.
 
-     Which is also why the unreachable notice lives in here rather than
-     beside the header: it is a statement about the list, and the list is
-     what gets replaced when the truth changes. A stream sends this container
-     on its first snapshot whatever the membership (`unsent`), and a snapshot
-     only exists after aria2 has answered — so a page rendered while the
-     sidecar was restarting corrects itself on the next tick instead of
-     carrying the warning until someone reloads. #}
+     The unreachable notice lives in here rather than beside the header
+     because it is a statement about the list, and the list is what gets
+     replaced when that changes: the stream sends the notice in this
+     container when aria2 stops answering, and the list again on the first
+     tick after it answers. #}
 {% import "icons.html" as icons %}
 <div id="downloads" class="flex flex-col gap-2 p-4">
 {% if aria2_unreachable %}

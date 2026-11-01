@@ -1,0 +1,1 @@
+- **Login flows are bounded.** Each request to the public login route stored state that was only removed when that login completed; the store is now capped and swept.

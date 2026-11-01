@@ -298,10 +298,9 @@ impl Page {
 #[template(path = "downloads.html")]
 pub struct Downloads {
     pub rows: Vec<Row>,
-    /// Always false from the poller: a snapshot only exists once aria2 has
-    /// answered, so a container coming down the stream is by construction the
-    /// list of a reachable service — which is what retires the warning the
-    /// page may have rendered with.
+    /// Replaces the list with a warning. The stream sends this container once
+    /// when aria2 stops answering and the real list on the first tick after
+    /// it answers again.
     pub aria2_unreachable: bool,
 }
 
