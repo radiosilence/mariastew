@@ -634,6 +634,13 @@ pub(crate) async fn finish_add_inner(
     let child = state.aria2.tell_status(&child_gid).await?;
     let paused = child.status == Status::Paused;
     let files = child.files;
+
+    // A download handed over running may have written its own files already,
+    // so only a paused one is recorded; without a record, cancelling falls
+    // back to the cautious rule.
+    if paused {
+        record_preexisting(state, &child_gid, &files).await;
+    }
     if files.is_empty() {
         return Err(AppError::Upstream(
             "aria2 followed the metadata pass but the download it created has no files".to_string(),
@@ -693,6 +700,19 @@ pub(crate) async fn finish_add_inner(
     state.activity.record(&child_gid, "downloading");
 
     Ok(())
+}
+
+/// Record which of a paused download's listed files are already on disk.
+/// Called before aria2 has opened any of them, so whatever exists was in the
+/// library first — see `state::Preexisting`.
+pub(crate) async fn record_preexisting(state: &AppState, gid: &str, files: &[crate::aria2::File]) {
+    let mut existing = HashSet::new();
+    for f in files {
+        if tokio::fs::symlink_metadata(&f.path).await.is_ok() {
+            existing.insert(std::path::PathBuf::from(&f.path));
+        }
+    }
+    state.preexisting.record(gid, existing);
 }
 
 /// The download a selection has to be applied to, given the gid an add is
@@ -779,16 +799,23 @@ pub async fn resume(State(state): State<AppState>, Path(gid): Path<String>) -> A
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
-/// Delete a torrent's on-disk remains: every selected file plus its `.aria2`
-/// control file, the torrent's own control file, and the directories that
-/// leaves empty. Deselected files are left alone, because a torrent added into
-/// a folder that already holds some of its files is deselected for exactly
-/// those. Failures are logged, not fatal: the download is already out of the
-/// queue either way.
+/// Delete what a cancelled torrent wrote: its files, their `.aria2` control
+/// files, the torrent's own control file, and the directories that leaves
+/// empty. Never a file that was in the library before the download started
+/// (see `state::Preexisting`). For a download with no such record, one added
+/// before this process started, only selected files aria2 has not completed
+/// go, since a complete one may be a pre-existing file aria2 verified.
+/// Failures are logged, not fatal: the download is already out of the queue
+/// either way.
 async fn delete_partial(state: &AppState, status: &Download) {
+    let known = state.preexisting.known(&status.gid);
     let mut deleted = Vec::new();
-    for f in status.files.iter().filter(|f| f.selected) {
-        if remove_contained(state, &f.path).await {
+    for f in &status.files {
+        let wrote = match &known {
+            Some(existing) => !existing.contains(std::path::Path::new(&f.path)),
+            None => f.selected && f.completed_length < f.length,
+        };
+        if wrote && remove_contained(state, &f.path).await {
             let _ = tokio::fs::remove_file(format!("{}.aria2", f.path)).await;
             deleted.push(std::path::PathBuf::from(&f.path));
         }
@@ -913,6 +940,7 @@ async fn clear(state: &AppState, gid: &str, status: &Download) -> bool {
         // to explain — this is the one place a log goes away before the cap
         // takes it.
         state.activity.forget(gid);
+        state.preexisting.forget(gid);
     } else {
         tracing::warn!(gid = %gid, "aria2 still lists the download after removal");
         state.activity.record(gid, "aria2 would not let go of it");
@@ -1158,6 +1186,7 @@ mod tests {
             poll: crate::poll::Poll::new(),
             clearing: crate::state::Clearing::default(),
             adding: Default::default(),
+            preexisting: Default::default(),
             http: reqwest::Client::new(),
         }
     }
@@ -1306,20 +1335,20 @@ mod tests {
             files: vec![
                 file(&episode),
                 file(&root.join("Show/never-arrived.nfo")),
-                crate::aria2::File {
-                    selected: false,
-                    ..file(&already_there)
-                },
+                file(&already_there),
             ],
             bittorrent_name: Some("Show".to_string()),
             ..Download::fixture()
         };
 
+        state
+            .preexisting
+            .record(&download.gid, HashSet::from([already_there.clone()]));
         delete_partial(&state, &download).await;
 
         assert!(
             already_there.exists(),
-            "a deselected file already in the library was deleted"
+            "a file already in the library before the add was deleted"
         );
         assert!(!episode.exists(), "the torrent's own file was left behind");
 
@@ -1332,6 +1361,51 @@ mod tests {
             "something the torrent did not make was removed"
         );
         assert!(root.exists(), "the destination itself was removed");
+        let _ = tokio::fs::remove_dir_all(&root).await;
+    }
+
+    /// Without a record of what was there first, a complete file may be one
+    /// aria2 verified rather than fetched, so only incomplete ones go.
+    #[tokio::test]
+    async fn cancelling_without_a_record_keeps_complete_files() {
+        let root = std::env::temp_dir().join("mariastew-delete-unrecorded");
+        let _ = tokio::fs::remove_dir_all(&root).await;
+        let complete = root.join("Show/ep01.mkv");
+        let partial = root.join("Show/ep02.mkv");
+        for f in [&complete, &partial] {
+            tokio::fs::create_dir_all(f.parent().unwrap())
+                .await
+                .unwrap();
+            tokio::fs::write(f, b"bytes").await.unwrap();
+        }
+        let mut state = state(String::new());
+        state.config = Arc::new(Config {
+            roots: vec![crate::config::Root {
+                name: "tv".to_string(),
+                path: root.clone(),
+            }],
+            ..Config::fixture()
+        });
+        let file = |path: &std::path::Path, completed_length| crate::aria2::File {
+            index: 1,
+            path: path.to_string_lossy().into_owned(),
+            length: 5,
+            completed_length,
+            selected: true,
+        };
+        let download = Download {
+            dir: root.to_string_lossy().into_owned(),
+            files: vec![file(&complete, 5), file(&partial, 2)],
+            ..Download::fixture()
+        };
+
+        delete_partial(&state, &download).await;
+
+        assert!(
+            complete.exists(),
+            "a complete file with no record was deleted"
+        );
+        assert!(!partial.exists(), "an incomplete file was left behind");
         let _ = tokio::fs::remove_dir_all(&root).await;
     }
 

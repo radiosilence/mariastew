@@ -194,7 +194,11 @@ impl Config {
     /// below that root. [`Self::resolve_existing`] accepts a path through a
     /// linked directory that lands elsewhere inside the roots; a delete through
     /// one would act on a different part of the library than the path names.
-    /// The root itself may be a link, as a mount often is.
+    /// The root itself may be a link, as a mount often is. A path given
+    /// through the real location behind such a root, rather than the root as
+    /// configured, is refused: aria2 reports paths under the configured root
+    /// for anything added here, so only a download added some other way
+    /// reaches this, and nothing is deleted for it.
     pub async fn resolve_unlinked(&self, path: &str) -> Option<PathBuf> {
         let lexical = self.resolve(path)?;
         let real = tokio::fs::canonicalize(&lexical).await.ok()?;

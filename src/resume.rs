@@ -89,6 +89,14 @@ async fn adopt(state: AppState, gid: String, dir: String) {
         .activity
         .record(&gid, "picked up again after a restart");
 
+    // Still paused, so nothing has been opened yet. A resolving magnet lists
+    // no real files; its child is recorded when it is followed.
+    if let Ok(d) = state.aria2.tell_status(&gid).await
+        && !d.is_metadata()
+    {
+        crate::routes::record_preexisting(&state, &gid, &d.files).await;
+    }
+
     if let Err(e) = state.aria2.unpause(&gid).await {
         tracing::error!(%gid, error = %e, "resume: could not release a stalled add");
         state.activity.record(&gid, format!("failed — {e}"));
@@ -238,6 +246,7 @@ mod tests {
             activity: crate::activity::Activity::new(),
             clearing: crate::state::Clearing::default(),
             adding: crate::state::Adding::default(),
+            preexisting: Default::default(),
             http,
         }
     }

@@ -200,6 +200,7 @@ async fn main() -> anyhow::Result<()> {
         poll: poll::Poll::new(),
         clearing: state::Clearing::default(),
         adding: state::Adding::default(),
+        preexisting: Default::default(),
         http,
     };
 

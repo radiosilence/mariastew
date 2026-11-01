@@ -141,12 +141,15 @@ pub fn spawn_watcher(state: AppState) {
 /// emptied, below the destination, go with it.
 async fn sweep_garbage(state: &AppState, d: &Download) {
     let dir = Path::new(&d.dir);
+    let existing = state.preexisting.known(&d.gid).unwrap_or_default();
     let mut deleted = Vec::new();
     for f in &d.files {
         let path = Path::new(&f.path);
-        // `completed_length` is aria2 saying it wrote to the file. A listed
-        // path it never wrote may hold something else by now, such as artwork
-        // a media server put there.
+        if existing.contains(path) {
+            continue;
+        }
+        // A listed path aria2 holds no bytes for may hold something else by
+        // now, such as artwork a media server put there.
         if !filter::is_garbage(&f.path)
             || f.completed_length == 0
             || !path.starts_with(dir)
@@ -247,6 +250,7 @@ mod tests {
             poll: crate::poll::Poll::new(),
             clearing: crate::state::Clearing::default(),
             adding: Default::default(),
+            preexisting: Default::default(),
             http: reqwest::Client::new(),
         }
     }
@@ -410,6 +414,28 @@ mod tests {
     /// Links are read, never followed. A link is not a file this download
     /// wrote, and resolving one would let a name inside the tree decide what
     /// gets unlinked outside it.
+    /// A file that was in the library before the download started is not the
+    /// download's to sweep, whatever it is called.
+    #[tokio::test]
+    async fn sweep_garbage_leaves_a_file_that_was_there_first() {
+        let root = temp_root("preexisting").await;
+        let poster = root.join("Show/poster.jpg");
+        touch(&poster).await;
+        let state = state(root.clone());
+        let d = download(&root, vec![file(1, poster.to_str().unwrap(), true)]);
+        state
+            .preexisting
+            .record(&d.gid, std::collections::HashSet::from([poster.clone()]));
+
+        sweep_garbage(&state, &d).await;
+
+        assert!(
+            poster.exists(),
+            "a file that predates the download was swept"
+        );
+        let _ = tokio::fs::remove_dir_all(&root).await;
+    }
+
     /// A directory link inside a root still reaches somewhere else in the
     /// library, and the file there is not this download's.
     #[tokio::test]
