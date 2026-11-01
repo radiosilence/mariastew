@@ -44,6 +44,10 @@ impl Clearing {
     pub fn contains(&self, gid: &str) -> bool {
         self.lock().contains(gid)
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.lock().is_empty()
+    }
 }
 
 /// Downloads this process is part-way through adding.

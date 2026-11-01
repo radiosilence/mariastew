@@ -1,0 +1,1 @@
+- **Fewer dependencies.** Unused crates are dropped and tokio compiles only the features the service uses.

@@ -57,7 +57,9 @@ pub fn spawn_watcher(state: AppState) {
         let mut seeded = false;
 
         while snapshots.changed().await.is_ok() {
-            let downloads = snapshots.borrow_and_update().downloads.clone();
+            let Some(downloads) = snapshots.borrow_and_update().downloads.clone() else {
+                continue;
+            };
 
             if !seeded {
                 for d in downloads.iter() {
@@ -273,8 +275,10 @@ async fn send(state: &AppState, text: &str) {
         "text": text,
         "parse_mode": "HTML",
     });
-    if let Err(e) = state.http.post(&url).json(&body).send().await {
-        tracing::warn!(error = %e, "failed to send telegram notification");
+    // `without_url`: the URL carries the bot token.
+    let sent = state.http.post(&url).json(&body).send().await;
+    if let Err(e) = sent.and_then(reqwest::Response::error_for_status) {
+        tracing::warn!(error = %e.without_url(), "failed to send telegram notification");
     }
 }
 
@@ -351,6 +355,50 @@ mod tests {
             .await
             .unwrap();
         tokio::fs::write(path, b"bytes").await.unwrap();
+    }
+
+    /// An outage is not every download leaving the list. Treated as one, the
+    /// first answer after it re-announces everything already finished.
+    #[tokio::test]
+    async fn an_aria2_outage_announces_nothing_when_it_ends() {
+        let root = temp_root("outage").await;
+        let state = state(root.clone());
+        let finished = Download {
+            gid: "done".to_string(),
+            ..download(&root, Vec::new())
+        };
+        let fresh = Download {
+            gid: "fresh".to_string(),
+            ..download(&root, Vec::new())
+        };
+        let reachable = |downloads: Vec<Download>| crate::poll::Snapshot {
+            downloads: Some(Arc::new(downloads)),
+            view: None,
+        };
+        spawn_watcher(state.clone());
+        tokio::task::yield_now().await;
+
+        for snapshot in [
+            reachable(vec![finished.clone()]),
+            crate::poll::Snapshot {
+                downloads: None,
+                view: None,
+            },
+            reachable(vec![finished.clone(), fresh]),
+        ] {
+            state.poll.publish(snapshot);
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+
+        assert!(
+            !state.activity.entries("fresh").is_empty(),
+            "the watcher never saw the snapshot after the outage"
+        );
+        assert!(
+            state.activity.entries("done").is_empty(),
+            "a download finished before the outage was announced again after it"
+        );
+        let _ = tokio::fs::remove_dir_all(&root).await;
     }
 
     /// The bug this exists to fix: a torrent completes with garbage files

@@ -1,7 +1,6 @@
 //! The page, the stream, and the four things the page can ask for.
 
 use std::collections::HashSet;
-use std::convert::Infallible;
 use std::time::Duration;
 
 use askama::Template;
@@ -21,10 +20,9 @@ use crate::poll::RenderedRow;
 use crate::state::AppState;
 use crate::views::{self, DirView, RootView, Row};
 
-/// How often a stream re-checks that its session still exists. Deliberately
-/// not the poll rate: this is a revocation check on a page that may be open for
-/// hours, and it takes the write lock on the session map every time it runs —
-/// a cost worth paying once a second and not ten times.
+/// How often a stream re-checks that its session still exists. Not the poll
+/// rate: a revocation check on a page open for hours does not need to run ten
+/// times a second.
 const SESSION_RECHECK: Duration = Duration::from_secs(1);
 
 /// How often a connection with nothing else to say announces itself.
@@ -245,6 +243,7 @@ pub async fn stream(
     let mut viewer = state.poll.viewer();
     let s = async_stream::stream! {
         let mut sent: Option<Vec<(String, u64)>> = None;
+        let mut warned = false;
         let mut checked = std::time::Instant::now() - SESSION_RECHECK;
         // On its own timer rather than counted off the poller's ticks: what it
         // reports is that this connection is up, and a poller wedged on an
@@ -263,10 +262,16 @@ pub async fn stream(
             let snapshot = tokio::select! {
                 next = viewer.next() => match next {
                     Some(snapshot) => snapshot,
-                    None => break,
+                    // Shutting down. Aborted rather than ended: Datastar
+                    // retries a stream that errors within a second, and one
+                    // that ends cleanly only when the page's watchdog fires.
+                    None => {
+                        yield Err(std::io::Error::other("shutting down"));
+                        break;
+                    }
                 },
                 _ = beat.tick() => {
-                    yield Ok::<_, Infallible>(heartbeat());
+                    yield Ok::<_, std::io::Error>(heartbeat());
                     continue;
                 }
             };
@@ -286,16 +291,30 @@ pub async fn stream(
                 continue;
             };
 
+            // Sent once per outage. Forgetting what was sent makes the first
+            // tick after it send the whole list, which is what retires the
+            // warning.
+            if view.unreachable {
+                if !warned {
+                    yield Ok::<_, std::io::Error>(patch_elements(&view.full));
+                    beat.reset();
+                    warned = true;
+                }
+                sent = None;
+                continue;
+            }
+            warned = false;
+
             let sent_anything = match unsent(&mut sent, &view.rows) {
                 Some(rows) => {
                     let any = !rows.is_empty();
                     for row in rows {
-                        yield Ok::<_, Infallible>(patch_elements(&row.html));
+                        yield Ok::<_, std::io::Error>(patch_elements(&row.html));
                     }
                     any
                 }
                 None => {
-                    yield Ok::<_, Infallible>(patch_elements(&view.full));
+                    yield Ok::<_, std::io::Error>(patch_elements(&view.full));
                     true
                 }
             };
@@ -1143,6 +1162,30 @@ mod tests {
         assert!(
             !html.contains("dl-"),
             "a download row rendered despite aria2 being unreachable: {html}"
+        );
+    }
+
+    /// Datastar retries a stream whose body errors within a second, and one
+    /// that ends cleanly only when the page's watchdog fires.
+    #[tokio::test]
+    async fn shutting_down_aborts_the_stream_rather_than_ending_it() {
+        let state = state(String::new());
+        state.poll.close();
+        let session = crate::auth::session::Session {
+            id: "s".to_string(),
+            sub: "tester".to_string(),
+            expires: std::time::Instant::now() + Duration::from_secs(60),
+        };
+        let response = stream(State(state), CurrentSession(session)).await;
+        let body = tokio::time::timeout(
+            Duration::from_secs(1),
+            axum::body::to_bytes(response.into_body(), usize::MAX),
+        )
+        .await
+        .expect("the stream ends once closed");
+        assert!(
+            body.is_err(),
+            "the stream ended cleanly instead of aborting"
         );
     }
 
