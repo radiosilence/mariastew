@@ -561,7 +561,7 @@ mod tests {
     /// other delete in the service: a path aria2 reports is still just a
     /// report, re-checked against the canonicalised roots before anything is
     /// unlinked. Garbage sitting outside every configured root — a download
-    /// aria2 was pointed somewhere the roots no longer cover — must be left
+    /// aria2 was pointed somewhere the roots do not cover — must be left
     /// alone even though every other condition for deletion is met.
     #[tokio::test]
     async fn sweep_garbage_refuses_a_path_outside_every_root() {

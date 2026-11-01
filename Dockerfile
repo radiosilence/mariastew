@@ -7,7 +7,7 @@
 # So this file does not build on its own: its context is a directory holding
 # `<arch>/mariastew` for each target architecture (`dist/` in CI), and each
 # platform copies its own. Local iteration never comes through here — `mise
-# run mariastew:dev` builds Dockerfile.dev, which still compiles inline
+# run dev` builds Dockerfile.dev, which still compiles inline
 # because no job feeds it.
 #
 # alpine, not scratch: the pod runs this image twice, service and an aria2c
@@ -45,6 +45,6 @@ USER 1000:1000
 LABEL org.opencontainers.image.title="mariastew"
 LABEL org.opencontainers.image.vendor="James Cleveland"
 LABEL org.opencontainers.image.licenses="MIT"
-LABEL org.opencontainers.image.source="https://github.com/radiosilence/jaritanet"
+LABEL org.opencontainers.image.source="https://github.com/radiosilence/mariastew"
 
 ENTRYPOINT ["/mariastew"]

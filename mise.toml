@@ -69,6 +69,15 @@ run = "./scripts/gen-app-icons.ts"
 # docker-compose's own `seed` service seeds these roots on every `up` — these
 # two are for outside docker: the plain `cargo run` flow in "Local
 # development", or resetting the fixtures without a full compose cycle.
+[tasks."dev"]
+description = "Run mariastew and aria2 locally against a debug build (needs docker)"
+run = "docker compose up --build"
+
+[tasks."dev:mock"]
+description = "Run mariastew against the mock aria2, which serves every download state at once"
+env = { ARIA2_RPC_URL = "http://127.0.0.1:6801/jsonrpc" }
+run = "docker compose --profile mock up --build --scale aria2=0"
+
 [tasks."seed"]
 description = "Populate the local tv/movies roots with names shaped like the real library"
 run = "./scripts/seed-dev-fixtures.ts"

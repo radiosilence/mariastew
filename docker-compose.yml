@@ -9,7 +9,7 @@ services:
   # Guarantees `docker compose up` alone gives a populated, realistic
   # library — an empty picker that looks like a working picker is worse
   # than an error, and "run this other command first" is how that happens.
-  # Runs the same scripts/seed-dev-fixtures.ts as `mise run mariastew:seed`
+  # Runs the same scripts/seed-dev-fixtures.ts as `mise run seed`
   # (mounted read-only, single source of truth) against the same bind
   # mounts mariastew and aria2 use below, and exits; mariastew waits for it
   # to succeed before starting. Idempotent, so this costs nothing on a
@@ -46,7 +46,7 @@ services:
       ROOTS: "tv:/tv,movies:/movies"
       PUBLIC_URL: "http://localhost:8080"
       # Overridable so the mock below can be swapped in without editing this
-      # file — see `mise run mariastew:dev:mock`.
+      # file — see `mise run dev:mock`.
       ARIA2_RPC_URL: "${ARIA2_RPC_URL:-http://127.0.0.1:6800/jsonrpc}"
       # Never actually reached: /auth/dev-login mints a session without
       # touching Hydra. Config::from_env still requires all three to be set.
@@ -101,7 +101,7 @@ services:
   #
   # Port 6801 rather than 6800 so it never races the real aria2 for the bind,
   # which means the choice of which one mariastew talks to is `ARIA2_RPC_URL`
-  # alone. `mise run mariastew:dev:mock` is that env var plus `--scale
+  # alone. `mise run dev:mock` is that env var plus `--scale
   # aria2=0`, so the real one is not started at all.
   #
   # Same node image and read-only scripts mount as `seed` above — this only

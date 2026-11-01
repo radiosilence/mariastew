@@ -201,7 +201,7 @@ fn unsent<'a>(
 
 /// One long-lived stream per page, fed by the process-wide poller rather than
 /// by a poll of its own — which is what lets the rate be a rate anyone would
-/// call smooth, since a second tab no longer doubles what aria2 is asked.
+/// call smooth, since a second tab does not double what aria2 is asked.
 ///
 /// It sends rows, not the list. Every snapshot arrives with each row already
 /// rendered and hashed, and this compares those hashes against what it last
@@ -353,13 +353,10 @@ enum Refused {
 /// back: its fetch wrapper returns early on `status !== 200`, ahead of the
 /// content-type sniffing that turns a JSON body into a signal patch. So a 400
 /// carrying a perfectly good explanation is, to the person who pressed the
-/// button, indistinguishable from the button doing nothing — which is exactly
-/// what it looked like.
+/// button, indistinguishable from the button doing nothing.
 ///
-/// The outcome therefore travels in the body and the status stays 200. What
-/// the status code no longer carries, the server log does: a rejected add is
-/// still a warning here, so this is a change to what the browser is told, not
-/// to what we can see.
+/// The outcome therefore travels in the body and the status stays 200. The
+/// server log still records a rejected add as a warning.
 ///
 /// An error also names the magnets that did go in, as `_addDone`, so the sheet
 /// can drop their rows and leave only what still needs attention. Sending the
@@ -560,9 +557,7 @@ const RESOLVE_TIMEOUT: Duration = Duration::from_secs(600);
 /// `addUri` for the same magnet.
 ///
 /// A magnet's own `files` describes the resolving gid itself — one entry,
-/// regardless of how many files the torrent actually has, which is why a
-/// three-file torrent used to log `magnet_files=1` and select whichever file
-/// happened to sit at index 1. `follow-torrent` (`mem`) spawns a second
+/// regardless of how many files the torrent actually has. `follow-torrent` (`mem`) spawns a second
 /// download from the resolved metadata and links the two by gid —
 /// `followedBy` on this one, `following` on that one — and it is that second
 /// gid's `files` that lists what the torrent actually contains. Reading the
@@ -1764,12 +1759,11 @@ mod tests {
             );
         }
 
-        /// The bug this whole task exists to fix: `add` used to hold the
-        /// connection open for as long as the metadata poll took — up to 60s
-        /// — which the browser does not wait for. Here the metadata never
-        /// resolves at all, and `add` still has to return well inside a
-        /// fraction of a second, because the only thing standing between the
-        /// caller and a response is one `addUri` round trip.
+        /// The metadata poll can take up to 60s, which the browser does not
+        /// wait for. Here the metadata never resolves at all, and `add` still
+        /// has to return well inside a second, because the only thing
+        /// standing between the caller and a response is one `addUri` round
+        /// trip.
         #[tokio::test]
         async fn add_returns_before_the_metadata_poll_completes() {
             let mock = mock_server(
@@ -1796,13 +1790,11 @@ mod tests {
             assert_eq!(response.status(), StatusCode::OK);
         }
 
-        /// The bug this whole task exists to fix: the file list used to be
-        /// read from the metadata gid's own `files` (always one entry,
-        /// itself), not the download `follow-torrent` spawned from it. A
-        /// three-file torrent where the video is *not* index 1 is exactly
-        /// the case that got the selection wrong: `magnet_files=1` regardless
-        /// of the torrent's real shape, and whichever file happened to sit at
-        /// index 1 was what got selected — the video only by luck.
+        /// The file list comes from the download `follow-torrent` spawned,
+        /// not the metadata gid's own `files` (always one entry, itself). A
+        /// three-file torrent where the video is *not* index 1 is the case
+        /// that tells the two apart: read from the metadata gid, whichever
+        /// file sits at index 1 would be selected.
         #[tokio::test]
         async fn finish_add_reads_the_selection_from_the_followed_downloads_file_list() {
             // The shape of the second live failure: a multi-file release
@@ -1861,7 +1853,7 @@ mod tests {
         /// magnet, and that gid leaves every list this UI reads the moment
         /// the real download exists. Without the link in `finish_add_inner`
         /// the only row left on screen would have no history at all — which
-        /// is the half of #298 that a per-torrent log panel exists for.
+        /// is what a per-torrent log panel exists for.
         #[tokio::test]
         async fn the_history_of_an_add_follows_the_download_it_produced() {
             let child_files = serde_json::json!([
@@ -2407,12 +2399,10 @@ mod tests {
             false
         }
 
-        /// The bug behind #316. aria2 refuses `remove` for a download it has
-        /// already stopped — every errored row, and any finished torrent it is
-        /// no longer seeding — so the handler failed on the first call and
-        /// never reached `removeDownloadResult`, which would have worked. The
-        /// row stayed, the press showed nothing, and the next press failed
-        /// identically.
+        /// aria2 refuses `remove` for a download it has already stopped:
+        /// every errored row, and any finished torrent it is no longer
+        /// seeding. Failing on that call would never reach
+        /// `removeDownloadResult`, which works, and the row would stay.
         #[tokio::test]
         async fn a_download_aria2_has_already_stopped_is_still_discarded() {
             for status in ["complete", "error"] {
@@ -2499,7 +2489,8 @@ mod tests {
         }
 
         /// A removal that does not take is a row that is still there, and
-        /// answering 204 over it is the silence #354 was about. The mark comes
+        /// answering 204 over it would tell the browser nothing happened
+        /// wrong. The mark comes
         /// off either way — the controls it hid have to come back.
         #[tokio::test]
         async fn a_removal_aria2_refuses_answers_with_an_error_and_hands_the_row_back() {
