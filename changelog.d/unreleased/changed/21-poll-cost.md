@@ -1,0 +1,1 @@
+- **Cheaper polling.** aria2 is sampled in one round trip without the fields nothing reads, and paused downloads are no longer re-checked every tick.

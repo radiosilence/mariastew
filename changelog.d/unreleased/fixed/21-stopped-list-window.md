@@ -1,0 +1,1 @@
+- **Recently finished downloads no longer vanish.** The stopped list was read from its oldest end and capped at 100, so once enough results had built up, new ones were not shown, announced or swept.
