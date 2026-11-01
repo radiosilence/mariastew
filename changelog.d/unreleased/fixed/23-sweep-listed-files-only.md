@@ -1,0 +1,1 @@
+- **The garbage sweep stays inside the torrent.** A release added into an existing folder no longer has that folder's own artwork and metadata deleted when it finishes.

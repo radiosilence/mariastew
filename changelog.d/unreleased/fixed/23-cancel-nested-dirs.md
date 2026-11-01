@@ -1,0 +1,1 @@
+- **Cancelling removes the torrent's whole folder tree.** Nested directories it made were left behind, empty.
