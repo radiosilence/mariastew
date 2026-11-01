@@ -133,18 +133,17 @@ below's problem.
 aria2 also downloads whole pieces regardless of selection, so a small
 deselected file sharing a piece boundary with a selected one can land anyway
 even once selection is correct. `notify::sweep_garbage` runs from the same
-completion watch that sends the Telegram message, and walks the download's own
-tree — the entries the torrent put directly under `dir`, never `dir` itself,
-which is a library root — deleting whatever `filter::is_garbage` flags and the
-directories that leaves empty.
+completion watch that sends the Telegram message and deletes whichever of the
+download's own files `filter::is_garbage` flags, selected or not, along with
+the directories that leaves empty below `dir`.
 
-It judges the disk rather than aria2's selection because selection is not the
-only thing that lets garbage through: a download aria2 already knew about when
-the service started never had one applied, so every file reads as selected, and
-a `.DS_Store` some other machine wrote is in no torrent's manifest at all. The
-sweep also runs once over everything already finished at startup, since a
-download that completed while the pod was down never had one. It is idempotent,
-so the ones that did cost a directory walk that finds nothing.
+It judges aria2's file list rather than the disk. A download aria2 already knew
+about when the service started never had a selection applied, so every file
+reads as selected, but its garbage is still in that list. What is not in it is
+not the torrent's: a release added into a folder that already holds artwork
+or metadata of its own leaves those files alone. The sweep also runs once over
+everything already finished at startup, since a download that completed while
+the pod was down never had one; it is idempotent.
 
 `clean-dls` in the dotfiles — the script `filter.rs` is ported from — ends by
 handing the tree to `prune`, which deletes any directory under a size
@@ -290,8 +289,8 @@ a disk read rather than a negotiation — restoring with the network unplugged
 loads the metadata and finishes verification in two seconds. aria2 names the
 file `<infohash>.torrent` and puts it beside the data, with no option to put it
 elsewhere, so ~60KB per torrent sits in the library next to what it describes.
-`notify::sweep_garbage` walks a download's own entries and never a sibling, so
-it survives to be read.
+It is not in the torrent's file list, so `notify::sweep_garbage` never
+considers it, and it survives to be read.
 
 Anything added before this existed has no saved torrent and falls back to the
 swarm, which is the old behaviour rather than a new failure.
