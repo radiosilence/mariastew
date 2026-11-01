@@ -57,7 +57,9 @@ pub fn spawn_watcher(state: AppState) {
         let mut seeded = false;
 
         while snapshots.changed().await.is_ok() {
-            let downloads = snapshots.borrow_and_update().downloads.clone();
+            let Some(downloads) = snapshots.borrow_and_update().downloads.clone() else {
+                continue;
+            };
 
             if !seeded {
                 for d in downloads.iter() {
@@ -358,6 +360,42 @@ mod tests {
     /// mistake), and until this ran they just sat there. A file
     /// `filter::is_garbage` does not flag must survive whether or not aria2
     /// selected it — this is not "delete whatever is unselected".
+    /// An outage is not every download leaving the list. Treated as one, the
+    /// first answer after it re-announces everything already finished.
+    #[tokio::test]
+    async fn an_aria2_outage_announces_nothing_when_it_ends() {
+        let root = temp_root("outage").await;
+        let state = state(root.clone());
+        let finished = Download {
+            gid: "done".to_string(),
+            ..download(&root, Vec::new())
+        };
+        let reachable = || crate::poll::Snapshot {
+            downloads: Some(Arc::new(vec![finished.clone()])),
+            view: None,
+        };
+        spawn_watcher(state.clone());
+        tokio::task::yield_now().await;
+
+        for snapshot in [
+            reachable(),
+            crate::poll::Snapshot {
+                downloads: None,
+                view: None,
+            },
+            reachable(),
+        ] {
+            state.poll.publish(snapshot);
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+
+        assert!(
+            state.activity.entries("done").is_empty(),
+            "a download finished before the outage was announced again after it"
+        );
+        let _ = tokio::fs::remove_dir_all(&root).await;
+    }
+
     #[tokio::test]
     async fn sweep_garbage_removes_the_spillover_a_selection_could_not_stop() {
         let root = temp_root("spillover").await;

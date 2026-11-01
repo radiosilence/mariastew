@@ -43,10 +43,14 @@ pub struct RenderedRow {
 pub struct View {
     pub rows: Vec<RenderedRow>,
     pub full: Arc<str>,
+    /// `full` is the unreachable warning rather than a list.
+    pub unreachable: bool,
 }
 
 pub struct Snapshot {
-    pub downloads: Arc<Vec<Download>>,
+    /// `None` when aria2 did not answer. Readers that act on transitions skip
+    /// these: an outage is not every download disappearing.
+    pub downloads: Option<Arc<Vec<Download>>>,
     /// None when no viewers or render fails.
     pub view: Option<View>,
 }
@@ -62,7 +66,7 @@ pub struct Poll {
 impl Poll {
     pub fn new() -> Self {
         let (tx, _) = watch::channel(Arc::new(Snapshot {
-            downloads: Arc::new(Vec::new()),
+            downloads: None,
             view: None,
         }));
         Self {
@@ -128,18 +132,20 @@ pub fn spawn(state: AppState) {
                 }
             }
 
-            let downloads = match all_downloads(&state).await {
-                Ok(d) => d,
+            let snapshot = match all_downloads(&state).await {
+                Ok(downloads) => Snapshot {
+                    view: watched.then(|| render(&state, &downloads)).flatten(),
+                    downloads: Some(Arc::new(downloads)),
+                },
                 Err(e) => {
                     tracing::warn!(error = %e, "poll: aria2 poll failed, retrying next tick");
-                    continue;
+                    Snapshot {
+                        downloads: None,
+                        view: watched.then(render_unreachable).flatten(),
+                    }
                 }
             };
-            let view = watched.then(|| render(&state, &downloads)).flatten();
-            let _ = state.poll.tx.send(Arc::new(Snapshot {
-                downloads: Arc::new(downloads),
-                view,
-            }));
+            let _ = state.poll.tx.send(Arc::new(snapshot));
         }
     });
 }
@@ -169,11 +175,36 @@ fn render(state: &AppState, downloads: &[Download]) -> Option<View> {
         (Ok(rows), Ok(full)) => Some(View {
             rows,
             full: full.into(),
+            unreachable: false,
         }),
         (Err(e), _) | (_, Err(e)) => {
             tracing::error!(error = %e, "poll: template render failed, retrying next tick");
             None
         }
+    }
+}
+
+/// The list replaced by the warning, so an outage that starts while a page is
+/// open says so instead of leaving the last list standing.
+fn render_unreachable() -> Option<View> {
+    let full = views::Downloads {
+        rows: Vec::new(),
+        aria2_unreachable: true,
+    }
+    .render()
+    .inspect_err(|e| tracing::error!(error = %e, "poll: template render failed"))
+    .ok()?;
+    Some(View {
+        rows: Vec::new(),
+        full: full.into(),
+        unreachable: true,
+    })
+}
+
+#[cfg(test)]
+impl Poll {
+    pub(crate) fn publish(&self, snapshot: Snapshot) {
+        let _ = self.tx.send(Arc::new(snapshot));
     }
 }
 
