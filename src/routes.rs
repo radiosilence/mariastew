@@ -1152,6 +1152,30 @@ mod tests {
         );
     }
 
+    /// Datastar retries a stream whose body errors within a second, and one
+    /// that ends cleanly only when the page's watchdog fires.
+    #[tokio::test]
+    async fn shutting_down_aborts_the_stream_rather_than_ending_it() {
+        let state = state(String::new());
+        state.poll.close();
+        let session = crate::auth::session::Session {
+            id: "s".to_string(),
+            sub: "tester".to_string(),
+            expires: std::time::Instant::now() + Duration::from_secs(60),
+        };
+        let response = stream(State(state), CurrentSession(session)).await;
+        let body = tokio::time::timeout(
+            Duration::from_secs(1),
+            axum::body::to_bytes(response.into_body(), usize::MAX),
+        )
+        .await
+        .expect("the stream ends once closed");
+        assert!(
+            body.is_err(),
+            "the stream ended cleanly instead of aborting"
+        );
+    }
+
     fn rendered(rows: &[(&str, u64)]) -> Vec<RenderedRow> {
         rows.iter()
             .map(|(gid, hash)| RenderedRow {
