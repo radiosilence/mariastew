@@ -89,7 +89,15 @@ async fn adopt(state: AppState, gid: String, dir: String) {
         .activity
         .record(&gid, "picked up again after a restart");
 
-    if let Err(e) = state.aria2.unpause(&gid).await {
+    // Only a resolving magnet is released here, since a paused one fetches no
+    // metadata. A real download is narrowed first and released by
+    // `finish_add_inner`; releasing it here would start it with no selection.
+    let released = match state.aria2.tell_status(&gid).await {
+        Ok(d) if d.is_metadata() => state.aria2.unpause(&gid).await,
+        Ok(_) => Ok(()),
+        Err(e) => Err(e),
+    };
+    if let Err(e) = released {
         tracing::error!(%gid, error = %e, "resume: could not release a stalled add");
         state.activity.record(&gid, format!("failed — {e}"));
         return;
@@ -170,7 +178,11 @@ mod tests {
                     ]),
                 ),
                 "aria2.tellStatus" if mock.resolves_to_child => {
-                    let mut d = download("stranded-gid", "active", serde_json::json!([]));
+                    let mut d = download(
+                        "stranded-gid",
+                        "active",
+                        serde_json::json!([{"index": "1", "path": "[METADATA]Show.S01", "length": "0", "selected": "true"}]),
+                    );
                     d["followedBy"] = serde_json::json!(["child-gid"]);
                     d
                 }
@@ -191,6 +203,7 @@ mod tests {
                 }
                 "aria2.pause" => panic!("the add must not pause anything itself any more"),
                 "aria2.changeOption" => {
+                    assert!(!released(&gid), "{gid} was released before it was narrowed");
                     if let Some(files) = body["params"][1]["select-file"].as_str() {
                         mock.selected.lock().unwrap().push(files.to_string());
                     }
