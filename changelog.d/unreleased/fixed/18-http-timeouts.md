@@ -1,0 +1,1 @@
+- **Notifications cannot hang.** Outbound HTTP has a timeout, so one Telegram request that never answers no longer stops every later notification.

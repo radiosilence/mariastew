@@ -1,0 +1,1 @@
+- **Deploys shut down promptly.** SIGTERM is handled, and open pages reconnect to the new pod within a second instead of holding the old one until it is killed.

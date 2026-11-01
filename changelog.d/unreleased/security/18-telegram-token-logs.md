@@ -1,0 +1,1 @@
+- **Telegram bot token no longer logged.** A failed notification logged the request URL, which carries the token.

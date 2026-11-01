@@ -15,18 +15,26 @@ run = "./node_modules/.bin/tailwindcss -i styles/app.css -o assets/app.css --min
 # container build has one artefact rather than two.
 
 [tasks."js"]
-description = "Rebuild the browser script after changing web/app.ts"
-# Typechecking is `typecheck`'s job (tsconfig.web.json is noEmit); this only
-# bundles. app.ts still imports nothing, so rolldown has no module graph to
-# speak of here — it exists to fingerprint the output filename, so a deploy's
-# new script can't be served from a browser cache holding the old one.
-# Sequential: the old hash's file has to be gone before build.rs globs for the
-# new one, or it finds two and refuses to guess.
+description = "Rebuild the browser bundle after changing web/"
+# One hashed file holding app code and the vendored Datastar, so a deploy's new
+# script cannot be served from a cache holding the old one. Typechecking is
+# `typecheck`'s job. Sequential: the old hash's file has to be gone before
+# build.rs globs for the new one, or it finds two and refuses to guess.
 run = [
   "rm -f assets/app-*.js",
-  "./node_modules/.bin/rolldown web/app.ts --platform browser --format esm --dir assets --entryFileNames app-[hash].js",
+  "./node_modules/.bin/rolldown web/main.ts --platform browser --format esm --minify --dir assets --entryFileNames app-[hash].js",
 ]
 # The output is committed, same deal as app.css.
+
+[tasks."datastar"]
+description = "Vendor a Datastar release into web/vendor (then `mise run js`)"
+# npm only carries Datastar's pre-1.0 betas, so the release bundle comes from
+# the tagged source instead.
+run = """
+set -eu
+v="${DATASTAR_VERSION:?set DATASTAR_VERSION, e.g. v1.0.4}"
+curl -fsSL "https://cdn.jsdelivr.net/gh/starfederation/datastar@$v/bundles/datastar.js" -o web/vendor/datastar.js
+"""
 
 [tasks."typecheck"]
 description = "Type check the browser script and the deploy chart"
@@ -40,13 +48,13 @@ run = "./node_modules/.bin/tsc -p tsconfig.web.json"
 [tasks."lint"]
 description = "Lint and format-check the TypeScript"
 run = [
-  "./node_modules/.bin/oxlint --deny-warnings web scripts deploy/pulumi/src",
-  "./node_modules/.bin/oxfmt --check web scripts deploy/pulumi/src",
+  "./node_modules/.bin/oxlint --deny-warnings web/*.ts scripts deploy/pulumi/src",
+  "./node_modules/.bin/oxfmt --check web/*.ts scripts deploy/pulumi/src",
 ]
 
 [tasks."fmt"]
 description = "Format the TypeScript"
-run = "./node_modules/.bin/oxfmt web scripts deploy/pulumi/src"
+run = "./node_modules/.bin/oxfmt web/*.ts scripts deploy/pulumi/src"
 
 [tasks."icons"]
 description = "Add a macro for any icons::<name> a template calls that templates/icons.html doesn't define yet"

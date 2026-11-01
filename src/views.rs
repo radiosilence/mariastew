@@ -298,10 +298,9 @@ impl Page {
 #[template(path = "downloads.html")]
 pub struct Downloads {
     pub rows: Vec<Row>,
-    /// Always false from the poller: a snapshot only exists once aria2 has
-    /// answered, so a container coming down the stream is by construction the
-    /// list of a reachable service — which is what retires the warning the
-    /// page may have rendered with.
+    /// Replaces the list with a warning. The stream sends this container once
+    /// when aria2 stops answering and the real list on the first tick after
+    /// it answers again.
     pub aria2_unreachable: bool,
 }
 
@@ -1363,7 +1362,8 @@ mod tests {
     /// side of it is otherwise silent until someone presses the button.
     #[test]
     fn every_ms_helper_a_template_calls_is_defined() {
-        const SCRIPT: &str = include_str!(concat!("../assets/", env!("APP_JS_FILENAME")));
+        const BUNDLE: &str = include_str!(concat!("../assets/", env!("APP_JS_FILENAME")));
+        const SOURCE: &str = include_str!("../web/ms.ts");
         let page = Page {
             roots: vec![],
             rows: vec![],
@@ -1390,9 +1390,14 @@ mod tests {
             "no ms.* helper calls found at all: {page}"
         );
         for name in called {
+            let call = format!("{name}(");
             assert!(
-                SCRIPT.contains(&format!("{name}(")),
-                "a template calls ms.{name}() but assets/app.js does not define it"
+                SOURCE.contains(&call),
+                "a template calls ms.{name}() but web/ms.ts does not define it"
+            );
+            assert!(
+                BUNDLE.contains(&call),
+                "web/ms.ts defines ms.{name}() but the committed bundle does not; run `mise run js`"
             );
         }
     }

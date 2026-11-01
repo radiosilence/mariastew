@@ -19,14 +19,14 @@ reached through `data-ref` rather than `document.getElementById`, so a template
 holds one definition of what an id is.
 
 That boundary is a lint and typecheck boundary, not a taste one. `web/app.ts`
-is source; `assets/app.js` is its compiled, committed output (see "Rebuilding
+is source; `assets/app-<hash>.js` is its bundled, committed output (see "Rebuilding
 the browser script" below) and, like the stylesheet and the vendored bundle, is
 a build artefact oxlint, oxfmt and `tsc` all ignore by name. JavaScript written
 inside an attribute is seen by nothing at all until a browser runs it.
 
 Nothing checks the two halves against each other at build time, so a test does:
 `every_ms_helper_a_template_calls_is_defined` renders the page, collects every
-`ms.*` it names, and fails if `app.js` does not define one. A rename is
+`ms.*` it names, and fails if `web/ms.ts` does not define one. A rename is
 otherwise silent until someone presses the button.
 
 ## Adding one
@@ -85,7 +85,7 @@ The keyboard is the other half. iOS Safari shrinks the *visual* viewport for
 it and leaves the layout viewport alone, and fixed positioning resolves
 against the layout one — so a sheet at `bottom: 0` opens underneath the
 keyboard, and Safari then scrolls the page chasing the focused field. Nothing
-in CSS describes that gap; `app.js` measures it against `visualViewport` and
+in CSS describes that gap; `web/ms.ts` measures it against `visualViewport` and
 publishes `--keyboard-inset`, which the sheet subtracts from both its bottom
 inset and its height. A browser that resizes its layout viewport for its own
 keyboard measures zero, which is also the fallback, so this corrects only the
@@ -227,20 +227,25 @@ separate from the Rust crate) against `styles/app.css`, minified, into
 
 ## Rebuilding the browser script
 
-Same deal as the stylesheet: `web/app.ts` is source, `assets/app.js` is the
-committed output, and only editing the source needs Node:
+Same deal as the stylesheet: `web/` is source and `assets/app-<hash>.js` is
+the committed output, so only editing the source needs Node:
 
 ```sh
 mise run js
 ```
 
-This runs `tsc` from `node_modules/.bin` against
-`tsconfig.web.json` — a browser config (DOM lib, real emit), which is what
-`mise run typecheck` picks up. It stands alone rather than extending anything,
-which is what made moving here a directory copy.
+rolldown bundles `web/main.ts` into one minified file whose name carries a
+content hash, so a deploy's new script cannot be served from a cache holding
+the old one; `build.rs` finds it and `main.rs` serves it. `main.ts` imports
+`ms.ts` before Datastar, and ES modules evaluate in import order, so `ms.*`
+exists before Datastar first scans the document.
 
-There is no bundler. `app.ts` imports nothing, so there is no module graph to
-build — and the one thing worth bundling in, Datastar, cannot come from npm at
-the version this app runs (`@starfederation/datastar` publishes a
-`1.0.0-beta`, against the v1.0.2 release vendored at `assets/datastar.js`), so
-it stays a `<script>` tag rather than an import.
+Datastar itself is vendored under `web/vendor/`, because npm carries only its
+pre-1.0 betas. To move to another release:
+
+```sh
+DATASTAR_VERSION=v1.0.4 mise run datastar
+mise run js
+```
+
+`mise run typecheck` checks `web/` against `tsconfig.web.json`.
