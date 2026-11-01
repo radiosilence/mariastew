@@ -6,6 +6,7 @@ rust = { version = "latest", components = "rustfmt,clippy" }
 actionlint = "1.7.12"
 shellcheck = "0.11.0"
 just = "latest"
+aube = "2.8.5"
 
 [tasks."css"]
 description = "Rebuild the stylesheet after changing a template"
@@ -37,10 +38,23 @@ curl -fsSL "https://cdn.jsdelivr.net/gh/starfederation/datastar@$v/bundles/datas
 
 [tasks."typecheck"]
 description = "Type check the browser script and the deploy chart"
+depends = ["typecheck:web"]
+run = "./deploy/pulumi/node_modules/.bin/tsc -p deploy/pulumi/tsconfig.json"
+
+[tasks."typecheck:web"]
+description = "Type check the browser script"
+run = "./node_modules/.bin/tsc -p tsconfig.web.json"
+
+[tasks."lint"]
+description = "Lint and format-check the TypeScript"
 run = [
-  "./node_modules/.bin/tsc -p tsconfig.web.json",
-  "./deploy/pulumi/node_modules/.bin/tsc -p deploy/pulumi/tsconfig.json",
+  "./node_modules/.bin/oxlint --deny-warnings web/*.ts scripts deploy/pulumi/src",
+  "./node_modules/.bin/oxfmt --check web/*.ts scripts deploy/pulumi/src",
 ]
+
+[tasks."fmt"]
+description = "Format the TypeScript"
+run = "./node_modules/.bin/oxfmt web/*.ts scripts deploy/pulumi/src"
 
 [tasks."icons"]
 description = "Add a macro for any icons::<name> a template calls that templates/icons.html doesn't define yet"

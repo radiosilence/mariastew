@@ -1,0 +1,1 @@
+- **CI checks the frontend.** A web job lints, formats and typechecks the TypeScript and fails when the committed stylesheet or script no longer match their sources; frontend dev dependencies are on their latest releases.

@@ -3,7 +3,10 @@
 The stylesheet, the browser script and the icons are generated and **committed**,
 so `cargo build` needs no node toolchain and the container build has one
 artefact rather than two. That only holds while the committed copies match
-their sources, which CI checks.
+their sources, which CI's `web` job checks by rebuilding them and failing on
+any difference. The same job runs `mise run lint` (oxlint, and oxfmt in check
+mode; `mise run fmt` applies it) and the browser typecheck. Node packages are
+installed with aube from `aube-lock.yaml`.
 
 ## Where the JavaScript lives
 

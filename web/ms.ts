@@ -7,9 +7,7 @@ declare global {
     dropMagnets(rows: HTMLElement, done: string[]): void;
     clickOnEnter(evt: KeyboardEvent, button: HTMLButtonElement): void;
     browseUrl(evt: Event): string | null;
-    streamEvent(
-      evt: CustomEvent<{ type: string; argsRaw?: Record<string, string> }>,
-    ): void;
+    streamEvent(evt: CustomEvent<{ type: string; argsRaw?: Record<string, string> }>): void;
     streamLost(): boolean;
   };
 }
@@ -119,9 +117,7 @@ globalThis.ms = {
    * the list of rows, so a row cloned in later needs nothing wired up.
    */
   magnetRowClick(evt) {
-    const button = (evt.target as HTMLElement).closest<HTMLElement>(
-      "[data-action]",
-    );
+    const button = (evt.target as HTMLElement).closest<HTMLElement>("[data-action]");
     const row = button?.closest("[data-magnet-row]");
     if (!button || !row) return;
     if (button.dataset.action === "remove") row.remove();
@@ -188,8 +184,7 @@ globalThis.ms = {
    * as an expression, so a folder named with a quote cannot break out of it.
    */
   browseUrl(evt) {
-    const dir = (evt.target as HTMLElement).closest<HTMLElement>("[data-dir]")
-      ?.dataset.dir;
+    const dir = (evt.target as HTMLElement).closest<HTMLElement>("[data-dir]")?.dataset.dir;
     return dir === undefined ? null : `/browse?path=${encodeURIComponent(dir)}`;
   },
 
@@ -249,11 +244,7 @@ globalThis.ms = {
    * not worth a request every timeout, forever, for as long as the tab is open.
    */
   streamLost() {
-    return (
-      !streamRefused &&
-      !document.hidden &&
-      Date.now() - streamLastSeen > STREAM_TIMEOUT_MS
-    );
+    return !streamRefused && !document.hidden && Date.now() - streamLastSeen > STREAM_TIMEOUT_MS;
   },
 };
 
@@ -284,19 +275,11 @@ if (viewport) {
   let published = -1;
   const publish = () => {
     const covered = Math.round(
-      Math.max(
-        0,
-        document.documentElement.clientHeight -
-          viewport.height -
-          viewport.offsetTop,
-      ),
+      Math.max(0, document.documentElement.clientHeight - viewport.height - viewport.offsetTop),
     );
     if (covered === published) return;
     published = covered;
-    document.documentElement.style.setProperty(
-      "--keyboard-inset",
-      `${covered}px`,
-    );
+    document.documentElement.style.setProperty("--keyboard-inset", `${covered}px`);
   };
 
   viewport.addEventListener("resize", publish);
