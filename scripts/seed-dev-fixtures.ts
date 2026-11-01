@@ -8,11 +8,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const DEV_DATA = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "dev-data",
-);
+const DEV_DATA = join(dirname(fileURLToPath(import.meta.url)), "..", "dev-data");
 
 const SHAPED_MOVIES = [
   "Nightfall Harbour (2017) (2160p BluRay x265 HEVC 10bit HDR AAC 7.1 Cormorant)",
@@ -44,13 +40,7 @@ const DIVERGENT_SPELLINGS = ["Show Name S02", "Show.Name.Season.2"];
 const SHOWS: Record<string, string[]> = {
   "Deadfall Creek": ["Season 01", "Season 02", "Season 03"],
   "Ashfield (2019)": ["Season 01"],
-  "The Ember Line": [
-    "Season 01",
-    "Season 02",
-    "Season 03",
-    "Season 04",
-    "Season 05",
-  ],
+  "The Ember Line": ["Season 01", "Season 02", "Season 03", "Season 04", "Season 05"],
   Saltmarsh: ["Season 01", "Season 02", "Season 03", "Season 04", "Season 05"],
 };
 
@@ -142,9 +132,7 @@ function movieNames(): string[] {
 }
 
 async function seedRoot(root: string, names: string[]) {
-  await Promise.all(
-    names.map((name) => mkdir(join(DEV_DATA, root, name), { recursive: true })),
-  );
+  await Promise.all(names.map((name) => mkdir(join(DEV_DATA, root, name), { recursive: true })));
 }
 
 async function main() {
@@ -157,20 +145,14 @@ async function main() {
   await seedRoot("movies", movies);
 
   const tvDirs = [
-    ...Object.entries(SHOWS).flatMap(([show, seasons]) =>
-      seasons.map((s) => `${show}/${s}`),
-    ),
+    ...Object.entries(SHOWS).flatMap(([show, seasons]) => seasons.map((s) => `${show}/${s}`)),
     ...DIVERGENT_SPELLINGS,
   ];
   await seedRoot("tv", tvDirs);
 
   const longest = movies.reduce((a, b) => (b.length > a.length ? b : a));
-  console.log(
-    `movies: ${movies.length} entries, longest ${longest.length} chars`,
-  );
-  console.log(
-    `tv: ${Object.keys(SHOWS).length} shows, ${tvDirs.length} directories total`,
-  );
+  console.log(`movies: ${movies.length} entries, longest ${longest.length} chars`);
+  console.log(`tv: ${Object.keys(SHOWS).length} shows, ${tvDirs.length} directories total`);
 }
 
 await main();

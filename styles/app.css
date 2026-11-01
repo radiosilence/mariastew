@@ -1,4 +1,10 @@
-@import "tailwindcss";
+/* Sources are named rather than detected: detection scans every file git does
+   not ignore, Markdown included, so a doc mentioning a class name would change
+   the stylesheet. */
+@import "tailwindcss" source(none);
+@source "../templates";
+@source "../src";
+@source "../web";
 
 /* `themes: false` drops daisyUI's own light and dark, so the only palette the
    stylesheet carries is the one below. It is what took 96KB of theme
