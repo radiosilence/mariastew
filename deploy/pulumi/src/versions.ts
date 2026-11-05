@@ -8,7 +8,7 @@
  * exactly which build you get. CI refuses a release where `Cargo.toml`,
  * `package.json` and this disagree.
  */
-export const APP_VERSION = "0.3.1";
+export const APP_VERSION = "0.3.2";
 
 export const VERSIONS = {
   mariastew: `ghcr.io/radiosilence/mariastew:${APP_VERSION}`,
