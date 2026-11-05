@@ -1,0 +1,1 @@
+- **Compressed responses.** Pages, assets and one-shot responses are compressed with brotli, zstd or gzip, whichever the browser prefers; they were sent uncompressed. The live download stream stays uncompressed, since an encoder would hold its events back.
