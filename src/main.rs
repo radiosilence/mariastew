@@ -291,6 +291,9 @@ async fn main() -> anyhow::Result<()> {
     }
     let app = app
         .layer(axum::middleware::from_fn(security_headers))
+        // The default predicate leaves `text/event-stream` alone: an encoder
+        // buffers, and the live stream must reach the browser as it is written.
+        .layer(tower_http::compression::CompressionLayer::new())
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state.clone());
 
