@@ -174,7 +174,7 @@ mod tests {
     /// A download paused with no selection, exactly as a restart leaves one.
     /// Named after its file rather than `[METADATA]…`, because
     /// `--bt-load-saved-metadata` resolves it off the disk before aria2 answers
-    /// anything — which is the shape the old rule missed.
+    /// anything, so the name alone cannot identify it.
     async fn mock_aria2(mock: Mock) -> String {
         async fn rpc(
             AxumState(mock): AxumState<Mock>,

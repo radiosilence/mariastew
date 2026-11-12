@@ -29,7 +29,7 @@
       data-dir="{{ p }}">{% call icons::arrow_up() %}{% endcall %} Up</button>
     {% endif %}
     {# Always shown, even at the roots, so where a download lands is never
-         a guess — see #257, "keep the current path visible". Wrapped, not
+         a guess. Wrapped, not
          truncated: this is the one line whose whole job is saying exactly
          where a download will land, so hiding any of it defeats the point.
          `break-words` is the fallback for one path segment on its own

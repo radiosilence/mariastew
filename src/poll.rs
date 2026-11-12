@@ -2,13 +2,11 @@
 //!
 //! aria2 has no notification for byte-level progress, so the only way to show
 //! a moving bar is to ask. How often that can be asked is the question this
-//! module exists to answer, and the answer used to be "once a second", because
-//! the asking was per open page: every stream ran its own three RPC calls and
-//! its own render, so the cost of going faster was multiplied by however many
-//! tabs happened to be open, and the cost of a phone left on a bedside table
-//! was the same as one being watched.
+//! module exists to answer. Polling per open page would multiply the cost of
+//! going faster by however many tabs happened to be open, and a phone left on
+//! a bedside table would cost the same as one being watched.
 //!
-//! Here it is one task. The RPC and the render happen once per tick no matter
+//! So it is one task. The RPC and the render happen once per tick no matter
 //! how many people are looking, which is what makes the rate a thing that can
 //! be turned up at all — and nobody looking is a case worth having, so a
 //! process with no viewers falls back to sampling for the notifier's benefit
