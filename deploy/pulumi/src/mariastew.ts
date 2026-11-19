@@ -19,9 +19,13 @@ const secretRef = (key: string) => ({
  * here would need a version, a workflow and a tracked-versions entry to carry
  * it. If the mirror is unreachable the pod crash-loops and retries, which is
  * the same outcome as a missing mapping — outbound-only.
+ *
+ * `apk` needs root, but `upnpc` parses whatever answers on the LAN, which is
+ * where miniupnpc's history of CVEs lies. So an init container installs it as
+ * root into a shared volume (`DEPS_INSTALL`), and this script runs as nobody
+ * with that volume read-only on its PATH.
  */
 const PORTMAP = `set -eu
-apk add --no-cache miniupnpc >/dev/null
 
 # Asked of the routing table rather than configured. This pod follows a label
 # to whichever machine is the file node, and that machine's address comes from
@@ -40,6 +44,32 @@ while :; do
   # router drops the mapping.
   sleep $((LEASE / 2))
 done`;
+
+/**
+ * Installs miniupnpc into `/deps` from the image's own keys and repositories,
+ * leaving the image itself untouched; the portmap container reads it through
+ * `DEPS_ENV`.
+ */
+const DEPS_INSTALL = [
+  "apk",
+  "add",
+  "--no-cache",
+  "--root",
+  "/deps",
+  "--initdb",
+  "--keys-dir",
+  "/etc/apk/keys",
+  "--repositories-file",
+  "/etc/apk/repositories",
+  "miniupnpc",
+];
+const DEPS_ENV = [
+  {
+    name: "PATH",
+    value: "/deps/usr/bin:/deps/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+  },
+  { name: "LD_LIBRARY_PATH", value: "/deps/usr/lib:/deps/lib" },
+];
 
 /**
  * mariastew: a torrent web UI, and the aria2 it fronts.
@@ -447,23 +477,54 @@ export function createMariastew(
               // Follows the file node, because the mapping has to point at
               // whichever machine is actually running aria2.
               nodeSelector: { [opts.nodeLabel]: "true" },
+              volumes: [{ name: "deps", emptyDir: {} }],
+              initContainers: [
+                {
+                  name: "deps",
+                  image: "alpine:3.21",
+                  command: DEPS_INSTALL,
+                  // Root, because it writes packages into a root-owned
+                  // volume. apk needs no capability to do that, so none is
+                  // kept.
+                  securityContext: {
+                    allowPrivilegeEscalation: false,
+                    capabilities: { drop: ["ALL"] },
+                    seccompProfile: { type: "RuntimeDefault" },
+                  },
+                  volumeMounts: [{ name: "deps", mountPath: "/deps" }],
+                  // Unpacking a package peaks far above what the loop needs,
+                  // and 32Mi OOM-killed it three times before it ever
+                  // finished.
+                  resources: {
+                    requests: { cpu: "5m", memory: "16Mi" },
+                    limits: { memory: "128Mi" },
+                  },
+                },
+              ],
               containers: [
                 {
                   name: "portmap",
                   image: "alpine:3.21",
                   command: ["sh", "-c", PORTMAP],
                   env: [
+                    ...DEPS_ENV,
                     { name: "PORT", value: String(conf.aria2.listenPort) },
                     { name: "LEASE", value: String(lease) },
                   ],
-                  securityContext: { allowPrivilegeEscalation: false },
-                  // Sized for `apk add`, not for the loop. Unpacking a
-                  // package peaks far above what `upnpc` then needs, and
-                  // 32Mi OOM-killed it three times before it ever placed a
-                  // mapping; steady state is a sleeping shell.
+                  securityContext: {
+                    runAsUser: 65534,
+                    runAsGroup: 65534,
+                    runAsNonRoot: true,
+                    allowPrivilegeEscalation: false,
+                    capabilities: { drop: ["ALL"] },
+                    seccompProfile: { type: "RuntimeDefault" },
+                  },
+                  volumeMounts: [{ name: "deps", mountPath: "/deps", readOnly: true }],
+                  // A sleeping shell that wakes every half-lease to run
+                  // `upnpc` once.
                   resources: {
-                    requests: { cpu: "5m", memory: "16Mi" },
-                    limits: { memory: "128Mi" },
+                    requests: { cpu: "5m", memory: "8Mi" },
+                    limits: { memory: "32Mi" },
                   },
                 },
               ],
