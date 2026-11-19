@@ -254,6 +254,24 @@ configured by hand. The mapper is then not created and aria2 goes back to
 being outbound-only, which makes a row reading "can't connect" (peers exist,
 none connected) ordinary rather than a fault — see `Health` in `src/aria2.rs`.
 
+**The mapper splits root from the parser.** `upnpc` parses whatever answers
+on the LAN, which is where miniupnpc's CVEs have been. apk needs root to
+initialise a package database, so a root init container installs miniupnpc
+into an `emptyDir` and the long-running container runs `upnpc` as nobody
+(65534) with that volume mounted read-only and only its `usr/lib` on
+`LD_LIBRARY_PATH`. Neither container keeps a capability, and both have a
+read-only root filesystem: apk writes nothing outside the volume. A failed
+mapping logs only the last line of `upnpc`'s stderr, reduced to printable
+ASCII and capped, because the rest of its output names the house's WAN
+address and any of it can be text a LAN device chose.
+
+Both containers run `VERSIONS.alpine`, one digest-pinned image, because the
+libraries in the volume are loaded by that image's musl. miniupnpc comes from
+alpine's repository rather than an image built here, so this pin is the
+mapper's whole supply chain. It is bumped by hand and must stay on a
+supported alpine branch, 3.24 or later; an end-of-life branch stops receiving
+miniupnpc fixes.
+
 Bandwidth is intentionally unthrottled in both directions
 (`maxOverallDownloadLimit` / `maxOverallUploadLimit` default to `0`). The
 media volume is a mechanical disk in a USB enclosure and saturates well before

@@ -14,11 +14,14 @@ const secretRef = (key: string) => ({
 /**
  * Places the peer-port forward on the router, then keeps replacing it.
  *
- * `miniupnpc` is installed at start rather than baked into an image of our
- * own: it is one binary invoked in a loop, and a container built and released
- * here would need a version, a workflow and a tracked-versions entry to carry
- * it. If the mirror is unreachable the pod crash-loops and retries, which is
- * the same outcome as a missing mapping — outbound-only.
+ * `miniupnpc` is installed at start from alpine's own repository rather than
+ * baked into an image of our own: it is one binary invoked in a loop, and an
+ * image of ours would add a build, a release and an image to vet to carry it.
+ * What this does cost is the alpine digest in `VERSIONS`, which both
+ * containers share and which is bumped by hand. It must stay on a supported
+ * alpine branch, 3.24 or later, because that branch decides which miniupnpc
+ * fixes arrive. If the mirror is unreachable the pod crash-loops and retries,
+ * which is the same outcome as a missing mapping — outbound-only.
  *
  * `apk` needs root, but `upnpc` parses whatever answers on the LAN, which is
  * where miniupnpc's history of CVEs lies. So an init container installs it as
@@ -34,11 +37,20 @@ lan() { ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src"
 
 while :; do
   ip=$(lan)
+  if [ -z "$ip" ]; then
+    echo "WARNING: no route out, so no LAN address to map TCP $PORT to; retrying in 60s"
+    sleep 60
+    continue
+  fi
   # TCP only. There is no UDP hostPort to forward to — see the ports below.
-  if out=$(LD_LIBRARY_PATH=/deps/usr/lib:/deps/lib /deps/usr/bin/upnpc -e aria2 -a "$ip" "$PORT" "$PORT" TCP "$LEASE" 2>&1); then
+  # stderr alone: stdout is a banner and the WAN address.
+  if err=$(LD_LIBRARY_PATH=/deps/usr/lib /deps/usr/bin/upnpc -e aria2 -a "$ip" "$PORT" "$PORT" TCP "$LEASE" 2>&1 >/dev/null); then
     echo "mapped TCP $PORT -> $ip:$PORT for $LEASE""s"
   else
-    echo "WARNING: could not map TCP $PORT — aria2 stays outbound-only: $out"
+    # Its last line, as printable ASCII and capped, because devices on the LAN
+    # choose what upnpc prints. A range rather than [:print:], which busybox tr
+    # reads as literal characters.
+    echo "WARNING: could not map TCP $PORT — aria2 stays outbound-only: $(printf '%s' "$err" | tail -n 1 | tr -cd ' -~' | head -c 300)"
   fi
   # Half the lease, so a refusal has a full cycle to recover in before the
   # router drops the mapping.
@@ -479,11 +491,13 @@ export function createMariastew(
                   ],
                   // Root, because apk will not initialise its database or set
                   // file ownership as anyone else. It needs no capability for
-                  // either, so none is kept.
+                  // either, so none is kept, and it writes nothing outside
+                  // `/deps`, so the image stays read-only.
                   securityContext: {
                     runAsUser: 0,
                     runAsNonRoot: false,
                     allowPrivilegeEscalation: false,
+                    readOnlyRootFilesystem: true,
                     capabilities: { drop: ["ALL"] },
                   },
                   volumeMounts: [{ name: "deps", mountPath: "/deps" }],
