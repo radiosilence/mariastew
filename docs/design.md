@@ -261,9 +261,11 @@ into an `emptyDir` and the long-running container runs `upnpc` as nobody
 (65534) with that volume mounted read-only and only its `usr/lib` on
 `LD_LIBRARY_PATH`. Neither container keeps a capability, and both have a
 read-only root filesystem: apk writes nothing outside the volume. A failed
-mapping logs only the last line of `upnpc`'s stderr, reduced to printable
-ASCII and capped, because the rest of its output names the house's WAN
-address and any of it can be text a LAN device chose.
+mapping logs only the line of `upnpc`'s output that gives the reason (the
+router's error code, no gateway found, bad arguments), reduced to printable
+ASCII and capped, because the rest names the house's WAN address and any of
+it can be text a LAN device chose. `upnpc -a @` picks the LAN address facing
+the router itself, and a failure retries in five minutes.
 
 Both containers run `VERSIONS.alpine`, one digest-pinned image, because the
 libraries in the volume are loaded by that image's musl. miniupnpc comes from

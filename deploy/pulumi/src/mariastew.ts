@@ -27,34 +27,31 @@ const secretRef = (key: string) => ({
  * where miniupnpc's history of CVEs lies. So an init container installs it as
  * root into a shared volume, and this script runs as nobody with that volume
  * read-only, loading the volume's libraries for `upnpc` alone.
+ *
+ * `-a @` has upnpc forward to its own address on the interface facing the
+ * router. This pod follows a label to whichever machine is the file node, whose
+ * address comes from DHCP, and a guess from the routing table names a tailnet
+ * address on a node routing through it.
+ *
+ * upnpc prints the WAN address, the device list and the reason for a failure
+ * across stdout and stderr together, so the log takes the one line that says
+ * why (a SOAP `failed with code N (Name)`, no gateway found, bad arguments),
+ * as printable ASCII and capped, and never the rest. A range rather than
+ * [:print:], which busybox tr reads as literal characters. A success renews
+ * at half the lease, so a refusal has a full cycle to recover in before the
+ * router drops the mapping; a failure retries in five minutes.
  */
 const PORTMAP = `set -eu
-
-# Asked of the routing table rather than configured. This pod follows a label
-# to whichever machine is the file node, and that machine's address comes from
-# DHCP, so neither is a thing to write down.
-lan() { ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}'; }
-
 while :; do
-  ip=$(lan)
-  if [ -z "$ip" ]; then
-    echo "WARNING: no route out, so no LAN address to map TCP $PORT to; retrying in 60s"
-    sleep 60
-    continue
-  fi
   # TCP only. There is no UDP hostPort to forward to — see the ports below.
-  # stderr alone: stdout is a banner and the WAN address.
-  if err=$(LD_LIBRARY_PATH=/deps/usr/lib /deps/usr/bin/upnpc -e aria2 -a "$ip" "$PORT" "$PORT" TCP "$LEASE" 2>&1 >/dev/null); then
-    echo "mapped TCP $PORT -> $ip:$PORT for $LEASE""s"
+  if out=$(LD_LIBRARY_PATH=/deps/usr/lib /deps/usr/bin/upnpc -e aria2 -a @ "$PORT" "$PORT" TCP "$LEASE" 2>&1); then
+    echo "mapped TCP $PORT for $LEASE""s"
+    sleep $((LEASE / 2))
   else
-    # Its last line, as printable ASCII and capped, because devices on the LAN
-    # choose what upnpc prints. A range rather than [:print:], which busybox tr
-    # reads as literal characters.
-    echo "WARNING: could not map TCP $PORT — aria2 stays outbound-only: $(printf '%s' "$err" | tail -n 1 | tr -cd ' -~' | head -c 300)"
+    why=$(printf '%s\\n' "$out" | grep -m 1 -E 'failed with code|No IGD|No valid|argument error' | tr -cd ' -~' | head -c 300)
+    echo "WARNING: could not map TCP $PORT — aria2 stays outbound-only: \${why:-upnpc gave no reason}"
+    sleep 300
   fi
-  # Half the lease, so a refusal has a full cycle to recover in before the
-  # router drops the mapping.
-  sleep $((LEASE / 2))
 done`;
 
 /**
