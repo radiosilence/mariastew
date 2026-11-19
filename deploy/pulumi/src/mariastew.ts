@@ -14,35 +14,67 @@ const secretRef = (key: string) => ({
 /**
  * Places the peer-port forward on the router, then keeps replacing it.
  *
- * `miniupnpc` is installed at start rather than baked into an image of our
- * own: it is one binary invoked in a loop, and a container built and released
- * here would need a version, a workflow and a tracked-versions entry to carry
- * it. If the mirror is unreachable the pod crash-loops and retries, which is
- * the same outcome as a missing mapping — outbound-only.
+ * `miniupnpc` is installed at start from alpine's own repository rather than
+ * baked into an image of our own: it is one binary invoked in a loop, and an
+ * image of ours would add a build, a release and an image to vet to carry it.
+ * What this does cost is the alpine digest in `VERSIONS`, which both
+ * containers share and which is bumped by hand. It must stay on a supported
+ * alpine branch, 3.24 or later, because that branch decides which miniupnpc
+ * fixes arrive. If the mirror is unreachable the pod crash-loops and retries,
+ * which is the same outcome as a missing mapping — outbound-only.
  *
  * `apk` needs root, but `upnpc` parses whatever answers on the LAN, which is
  * where miniupnpc's history of CVEs lies. So an init container installs it as
  * root into a shared volume, and this script runs as nobody with that volume
  * read-only, loading the volume's libraries for `upnpc` alone.
+ *
+ * `-a @` has upnpc forward to its own address on the interface it reached the
+ * router through; the success line names it when upnpc reports it as a plain
+ * IPv4 address and port.
+ *
+ * upnpc's output mixes the WAN address with text any LAN device chooses: an
+ * SSDP responder's description URL is printed verbatim, newlines included, so
+ * it can forge whole lines. The log therefore never carries upnpc's text. A
+ * failure is reported as the UPnP error number from an anchored match, as one
+ * of the fixed messages here, or as upnpc's exit status, so a forged line can
+ * at most change a number. Only a zero exit counts as mapped. A mapping renews
+ * at half its lease. A failure is retried after five minutes, or after half a
+ * lease when the router gives the same answer again, so one that will never
+ * accept the mapping is not asked every five minutes. Where several lines
+ * match, the last is taken: upnpc prints its own result after anything a
+ * device sent.
  */
 const PORTMAP = `set -eu
-
-# Asked of the routing table rather than configured. This pod follows a label
-# to whichever machine is the file node, and that machine's address comes from
-# DHCP, so neither is a thing to write down.
-lan() { ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}'; }
-
+last=
 while :; do
-  ip=$(lan)
-  # TCP only. There is no UDP hostPort to forward to — see the ports below.
-  if out=$(LD_LIBRARY_PATH=/deps/usr/lib:/deps/lib /deps/usr/bin/upnpc -e aria2 -a "$ip" "$PORT" "$PORT" TCP "$LEASE" 2>&1); then
-    echo "mapped TCP $PORT -> $ip:$PORT for $LEASE""s"
+  rc=0
+  out=$(LD_LIBRARY_PATH=/deps/usr/lib /deps/usr/bin/upnpc -e aria2 -a @ "$PORT" "$PORT" TCP "$LEASE" 2>&1) || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    last=
+    to=$(printf '%s\\n' "$out" | grep -oE '^InternalIP:Port = [0-9]{1,3}(\\.[0-9]{1,3}){3}:[0-9]{1,5}$' | tail -n 1 || true)
+    echo "mapped TCP $PORT for \${LEASE}s\${to:+ ($to)}"
+    sleep $((LEASE / 2))
   else
-    echo "WARNING: could not map TCP $PORT — aria2 stays outbound-only: $out"
+    code=$(printf '%s\\n' "$out" | sed -nE 's/^(AddPortMapping|GetSpecificPortMappingEntry)\\(.*\\) failed with code (-?[0-9]{1,4}) .*/\\1 error \\2/p' | tail -n 1)
+    case $code in
+      GetSpecific*) why="router took the mapping but would not confirm it ($code); it may still be in place" ;;
+      ?*) why="router answered $code" ;;
+      *)
+        if printf '%s\\n' "$out" | grep -q '^No IGD'; then
+          why="no UPnP gateway answered"
+        elif printf '%s\\n' "$out" | grep -q '^No valid'; then
+          why="no valid UPnP gateway found; UPnP may be off on the router"
+        else
+          why="upnpc exited $rc"
+        fi
+        ;;
+    esac
+    echo "WARNING: could not map TCP $PORT — aria2 stays outbound-only: $why"
+    # The same answer from the router twice will not change: back off. A
+    # gateway that did not answer at all may be rebooting, so keep trying.
+    if [ -n "$code" ] && [ "$why" = "$last" ]; then sleep $((LEASE / 2)); else sleep 300; fi
+    last=$why
   fi
-  # Half the lease, so a refusal has a full cycle to recover in before the
-  # router drops the mapping.
-  sleep $((LEASE / 2))
 done`;
 
 /**
@@ -422,12 +454,12 @@ export function createMariastew(
    * the media library and terminates traffic from the internet out of its
    * confinement to buy a port mapping. This pod mounts only its own scratch
    * volume, holds no credential and runs its loop as nobody on a read-only
-   * root, so what leaves the policy is a process that can reach the LAN and
-   * nothing else.
+   * root. On the host network it can still reach whatever the node can, the
+   * internet and the tailnet included, which is why so little runs in it.
    *
    * Mappings carry a lease and the router drops them on reboot, so this
-   * re-places rather than sets-and-forgets. A failure is logged and retried at
-   * the next tick: an expired mapping means outbound-only, which is where
+   * re-places rather than sets-and-forgets. A failure is logged and retried in
+   * five minutes: an expired mapping means outbound-only, which is where
    * everything was before this existed.
    */
   if (conf.aria2.upnp) {
@@ -479,11 +511,13 @@ export function createMariastew(
                   ],
                   // Root, because apk will not initialise its database or set
                   // file ownership as anyone else. It needs no capability for
-                  // either, so none is kept.
+                  // either, so none is kept, and it writes nothing outside
+                  // `/deps`, so the image stays read-only.
                   securityContext: {
                     runAsUser: 0,
                     runAsNonRoot: false,
                     allowPrivilegeEscalation: false,
+                    readOnlyRootFilesystem: true,
                     capabilities: { drop: ["ALL"] },
                   },
                   volumeMounts: [{ name: "deps", mountPath: "/deps" }],
@@ -515,8 +549,8 @@ export function createMariastew(
                     capabilities: { drop: ["ALL"] },
                   },
                   volumeMounts: [{ name: "deps", mountPath: "/deps", readOnly: true }],
-                  // A sleeping shell that wakes every half-lease to run
-                  // `upnpc` once.
+                  // A sleeping shell that runs `upnpc` once per half-lease,
+                  // or every five minutes while it fails.
                   resources: {
                     requests: { cpu: "5m", memory: "8Mi" },
                     limits: { memory: "32Mi" },
