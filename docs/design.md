@@ -260,12 +260,13 @@ initialise a package database, so a root init container installs miniupnpc
 into an `emptyDir` and the long-running container runs `upnpc` as nobody
 (65534) with that volume mounted read-only and only its `usr/lib` on
 `LD_LIBRARY_PATH`. Neither container keeps a capability, and both have a
-read-only root filesystem: apk writes nothing outside the volume. A failed
-mapping logs only the line of `upnpc`'s output that gives the reason (the
-router's error code, no gateway found, bad arguments), reduced to printable
-ASCII and capped, because the rest names the house's WAN address and any of
-it can be text a LAN device chose. `upnpc -a @` picks the LAN address facing
-the router itself, and a failure retries in five minutes.
+read-only root filesystem: apk writes nothing outside the volume. `upnpc`'s
+output mixes the house's WAN address with text any LAN device chooses, newlines
+included, so the log never carries it: a failure is the UPnP error number, a
+fixed message or the exit status, and a success names the internal address
+only when it parses as IPv4 and a port. `upnpc -a @` picks the LAN address
+facing the router itself. A failure retries in five minutes, or half a lease
+when the reason repeats.
 
 Both containers run `VERSIONS.alpine`, one digest-pinned image, because the
 libraries in the volume are loaded by that image's musl. miniupnpc comes from
