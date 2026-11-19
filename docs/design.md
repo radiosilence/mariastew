@@ -266,7 +266,7 @@ included, so the log never carries it: a failure is the UPnP error number, a
 fixed message or the exit status, and a success names the internal address
 only when it parses as IPv4 and a port. `upnpc -a @` picks the LAN address
 facing the router itself. A failure retries in five minutes, or half a lease
-when the reason repeats.
+when the router gives the same answer again.
 
 Both containers run `VERSIONS.alpine`, one digest-pinned image, because the
 libraries in the volume are loaded by that image's musl. miniupnpc comes from
