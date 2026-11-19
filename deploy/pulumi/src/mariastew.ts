@@ -22,8 +22,8 @@ const secretRef = (key: string) => ({
  *
  * `apk` needs root, but `upnpc` parses whatever answers on the LAN, which is
  * where miniupnpc's history of CVEs lies. So an init container installs it as
- * root into a shared volume (`DEPS_INSTALL`), and this script runs as nobody
- * with that volume read-only on its PATH.
+ * root into a shared volume, and this script runs as nobody with that volume
+ * read-only, loading the volume's libraries for `upnpc` alone.
  */
 const PORTMAP = `set -eu
 
@@ -35,41 +35,15 @@ lan() { ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src"
 while :; do
   ip=$(lan)
   # TCP only. There is no UDP hostPort to forward to — see the ports below.
-  if upnpc -e aria2 -a "$ip" "$PORT" "$PORT" TCP "$LEASE" >/dev/null 2>&1; then
+  if out=$(LD_LIBRARY_PATH=/deps/usr/lib:/deps/lib /deps/usr/bin/upnpc -e aria2 -a "$ip" "$PORT" "$PORT" TCP "$LEASE" 2>&1); then
     echo "mapped TCP $PORT -> $ip:$PORT for $LEASE""s"
   else
-    echo "WARNING: could not map TCP $PORT — aria2 stays outbound-only"
+    echo "WARNING: could not map TCP $PORT — aria2 stays outbound-only: $out"
   fi
   # Half the lease, so a refusal has a full cycle to recover in before the
   # router drops the mapping.
   sleep $((LEASE / 2))
 done`;
-
-/**
- * Installs miniupnpc into `/deps` from the image's own keys and repositories,
- * leaving the image itself untouched; the portmap container reads it through
- * `DEPS_ENV`.
- */
-const DEPS_INSTALL = [
-  "apk",
-  "add",
-  "--no-cache",
-  "--root",
-  "/deps",
-  "--initdb",
-  "--keys-dir",
-  "/etc/apk/keys",
-  "--repositories-file",
-  "/etc/apk/repositories",
-  "miniupnpc",
-];
-const DEPS_ENV = [
-  {
-    name: "PATH",
-    value: "/deps/usr/bin:/deps/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-  },
-  { name: "LD_LIBRARY_PATH", value: "/deps/usr/lib:/deps/lib" },
-];
 
 /**
  * mariastew: a torrent web UI, and the aria2 it fronts.
@@ -446,8 +420,10 @@ export function createMariastew(
    * be on the LAN, which means `hostNetwork`, which means leaving the policy's
    * reach. Putting it in the mariastew pod would take the pod that writes to
    * the media library and terminates traffic from the internet out of its
-   * confinement to buy a port mapping. This pod reads nothing, mounts nothing
-   * and holds no credential, so being unconfined costs nothing.
+   * confinement to buy a port mapping. This pod mounts only its own scratch
+   * volume, holds no credential and runs its loop as nobody on a read-only
+   * root, so what leaves the policy is a process that can reach the LAN and
+   * nothing else.
    *
    * Mappings carry a lease and the router drops them on reboot, so this
    * re-places rather than sets-and-forgets. A failure is logged and retried at
@@ -477,24 +453,42 @@ export function createMariastew(
               // Follows the file node, because the mapping has to point at
               // whichever machine is actually running aria2.
               nodeSelector: { [opts.nodeLabel]: "true" },
+              securityContext: { seccompProfile: { type: "RuntimeDefault" } },
               volumes: [{ name: "deps", emptyDir: {} }],
               initContainers: [
                 {
                   name: "deps",
-                  image: "alpine:3.21",
-                  command: DEPS_INSTALL,
-                  // Root, because it writes packages into a root-owned
-                  // volume. apk needs no capability to do that, so none is
-                  // kept.
+                  image: VERSIONS.alpine,
+                  // Into `/deps` from the image's own keys and repositories,
+                  // leaving the image untouched. Package scripts would have to
+                  // chroot into `/deps`, which has no shell and this container
+                  // no CAP_SYS_CHROOT, so they are skipped.
+                  command: [
+                    "apk",
+                    "add",
+                    "--no-cache",
+                    "--no-scripts",
+                    "--root",
+                    "/deps",
+                    "--initdb",
+                    "--keys-dir",
+                    "/etc/apk/keys",
+                    "--repositories-file",
+                    "/etc/apk/repositories",
+                    "miniupnpc",
+                  ],
+                  // Root, because apk will not initialise its database or set
+                  // file ownership as anyone else. It needs no capability for
+                  // either, so none is kept.
                   securityContext: {
+                    runAsUser: 0,
+                    runAsNonRoot: false,
                     allowPrivilegeEscalation: false,
                     capabilities: { drop: ["ALL"] },
-                    seccompProfile: { type: "RuntimeDefault" },
                   },
                   volumeMounts: [{ name: "deps", mountPath: "/deps" }],
-                  // Unpacking a package peaks far above what the loop needs,
-                  // and 32Mi OOM-killed it three times before it ever
-                  // finished.
+                  // Unpacking a package needs well over 32Mi, far above what the
+                  // loop needs.
                   resources: {
                     requests: { cpu: "5m", memory: "16Mi" },
                     limits: { memory: "128Mi" },
@@ -504,10 +498,11 @@ export function createMariastew(
               containers: [
                 {
                   name: "portmap",
-                  image: "alpine:3.21",
+                  // The same image as the init container: the libraries in
+                  // `/deps` are loaded by this image's own musl.
+                  image: VERSIONS.alpine,
                   command: ["sh", "-c", PORTMAP],
                   env: [
-                    ...DEPS_ENV,
                     { name: "PORT", value: String(conf.aria2.listenPort) },
                     { name: "LEASE", value: String(lease) },
                   ],
@@ -516,8 +511,8 @@ export function createMariastew(
                     runAsGroup: 65534,
                     runAsNonRoot: true,
                     allowPrivilegeEscalation: false,
+                    readOnlyRootFilesystem: true,
                     capabilities: { drop: ["ALL"] },
-                    seccompProfile: { type: "RuntimeDefault" },
                   },
                   volumeMounts: [{ name: "deps", mountPath: "/deps", readOnly: true }],
                   // A sleeping shell that wakes every half-lease to run
