@@ -40,6 +40,11 @@ use crate::state::AppState;
 /// tag that requests it.
 pub const APP_JS_PATH: &str = concat!("/assets/", env!("APP_JS_FILENAME"));
 
+/// Datastar's address: askama_datastar's vendored copy, named by a hash of its
+/// contents, which `askama_datastar::script::serve` lets a browser keep for good.
+pub static DATASTAR_JS_URL: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| askama_datastar::script::url("/assets/datastar.js"));
+
 /// Everything this page needs comes from this origin, so the policy says so.
 /// Nothing is fetched from a CDN and no handler is written into the markup —
 /// the script bundle, Datastar included, is served from here, and
@@ -281,7 +286,8 @@ async fn main() -> anyhow::Result<()> {
             auth::extract::require_session,
         )))
         .merge(auth::routes::router())
-        .route("/healthz", get(|| async { "ok" }));
+        .route("/healthz", get(|| async { "ok" }))
+        .route("/assets/datastar.js", get(askama_datastar::script::serve));
     for (path, content_type, body) in ASSETS {
         let (cache_control, etag) = cache_headers(path, body);
         app = app.route(

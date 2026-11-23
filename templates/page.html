@@ -25,6 +25,9 @@
 <meta name="theme-color" content="#1b1210">
 <link rel="stylesheet" href="/assets/app.css">
 <script type="module" src="{{ self.app_js_path() }}"></script>
+{# After the app's: module scripts run in document order, and `ms` has to exist
+   before Datastar compiles the expressions that call it. #}
+<script type="module" src="{{ self.datastar_js_path() }}"></script>
 </head>
 {# The stream reopens itself, by two attributes doing one job.
 

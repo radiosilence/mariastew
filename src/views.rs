@@ -289,6 +289,11 @@ impl Page {
     fn app_js_path(&self) -> &'static str {
         crate::APP_JS_PATH
     }
+
+    /// Datastar, as askama_datastar serves it, under `crate::DATASTAR_JS_URL`.
+    fn datastar_js_path(&self) -> &'static str {
+        &crate::DATASTAR_JS_URL
+    }
 }
 
 /// The list on its own. Its root element carries the same id as the one in the
