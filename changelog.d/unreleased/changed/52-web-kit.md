@@ -1,0 +1,1 @@
+- **The kōan web kit.** The web UI is drawn by the shared kit in `@radiosilence/theme` 0.2.4 rather than by rules of its own, so its controls, statuses and notices match the other radiosilence pages. A finished download is marked with a status, errors and warnings are notices, and the app's words are lowercase.

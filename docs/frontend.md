@@ -74,7 +74,7 @@ that has just pasted — did nothing at all.
 
 ## Where the sheet sits
 
-`.sheet` in `styles/app.css` owns the dialog's insets, width and height cap,
+The kit's `.sheet` owns the dialog's insets, width and height cap,
 because a `<dialog>` already has all four from the user agent — `width:
 fit-content`, `margin: auto`, `max-width: calc(100% - 6px - 2em)` — and a
 margin utility only argues with those, where an author rule wins outright. The
@@ -108,9 +108,8 @@ class for the cases that want otherwise.
 
 A `<summary>`'s own marker comes from the user agent, so it is a filled
 triangle in Chrome and something else everywhere else — the same problem
-arriving through a different door. `.disclosure` takes it off and turns the
-chevron inside instead; a disclosure written later gets that by using the same
-two class names.
+arriving through a different door. The kit's `details.disclosure` takes it off
+and draws a chevron of its own that turns when the disclosure opens.
 
 Adding one: call `icons::<name>(class="")` from a template, run
 
@@ -179,10 +178,21 @@ own before it has parsed any `<link>`.
 
 ## The theme
 
-The look is the one radiosilence's other web pages share: tokens from
-`@radiosilence/theme` ([radiosilence/theme](https://github.com/radiosilence/theme)),
-drawn by the rules in kōan's
+The look is the one radiosilence's other web pages share, and the kōan web kit
+in `@radiosilence/theme` ([radiosilence/theme](https://github.com/radiosilence/theme))
+draws it: the tokens, the element defaults, and the controls the templates use
+(the button weights, `notice`, `status`, `meter`, `spinner`, `skeleton`,
+`disclosure` and `sheet`). The rules behind it are kōan's
 [`docs/design/koan-theme.md`](https://github.com/radiosilence/koan/blob/main/docs/design/koan-theme.md).
+`styles/app.css` holds only what is particular to mariastew: the accent, the
+watermark, `.icon` and the picker's `.entry`. A look the app needs and the kit
+lacks is added to the kit rather than here.
+
+The kit removes Tailwind's palette, radii, shadows, blurs and type sizes, so a
+class such as `text-sm` or `rounded-lg` compiles to nothing and silently loses
+its style. `just css` runs the kit's `kit-check` over `templates/`, `src/` and
+`web/` first and fails on any class outside the kit; a deliberate exception is
+marked `kit: raw` with its reason.
 Geist Mono throughout, square corners, no shadows, blur or gradients, regions
 separated by space or a hairline, and the app's own words in lower case. What
 the app did not write keeps its case: torrent and file names, directory names,
@@ -194,12 +204,12 @@ amber from `icons/icon.svg`, darkened on light to stay legible; both values and
 their contrast against `--surface` are stated where they are set in
 `styles/app.css`.
 
-A download bar is the one place colour carries a status, so it keeps tones the
-accent cannot stand in for: green (`--ok`, the theme's own mint and forest) for
-moving or done, the theme's `--warn` for stalled, `--bad` for failing, and
-`--muted` for waiting on something other than the swarm. `views::tone_and_state`
-pairs each tone with the word shown beside the bar, so colour is never the only
-way to read a row.
+A download bar is the one place colour carries a status, so it is drawn in the
+kit's status tones rather than the accent: `--ok` for moving or done, `--warn`
+for stalled, `--bad` for failing, and `--muted` for waiting on something other
+than the swarm. A row's per-file bars take the same tone as its own.
+`views::tone_and_state` pairs each tone with the word shown beside the bar, so
+colour is never the only way to read a row.
 
 The page background is the icon's silhouette, once, very faint, `fixed` so it
 does not scroll. It is the silhouette and not the icon because flattening the
@@ -218,7 +228,7 @@ toolchain; only editing a template or `styles/app.css` does:
 just css
 ```
 
-This installs the Node packages, writes a GitHub Packages token to
+This installs the Node packages, runs `kit-check`, writes a GitHub Packages token to
 `.npmrc.auth` first if there is none (`@radiosilence/theme` is published there,
 and reading it needs one: `GH_TOKEN`, or the `gh` login), compiles
 `styles/app.css` into `assets/app.css` and copies the theme's typeface beside

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "devDependencies": {
-    "@radiosilence/theme": "0.1.0",
+    "@radiosilence/theme": "0.2.4",
     "@tailwindcss/cli": "4.3.3",
     "lucide-static": "1.66.0",
     "oxfmt": "0.75.0",

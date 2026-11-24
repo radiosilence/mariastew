@@ -2,10 +2,10 @@
  * mariastew's stylesheet, compiled by Tailwind into assets/app.css (`just css`). The compiled file is committed: the
  * binary embeds it, and building mariastew must not need Node.
  *
- * The look is kōan's (radiosilence/koan, docs/design/koan-theme.md): Geist Mono throughout, square corners, no
- * shadows, blur or gradients, regions told apart by space or a hairline, the app's own words in lower case and what a
- * person or a torrent wrote in its own. The tokens come from @radiosilence/theme; what is here is element defaults, the
- * controls the templates draw, and the status tones a download row is read by.
+ * The look is kōan's (radiosilence/koan, docs/design/koan-theme.md), and @radiosilence/theme draws it: the tokens, the
+ * element defaults and the kit of controls (button weights, notice, status, meter, spinner, skeleton, disclosure,
+ * sheet). What is here is only what is particular to mariastew: its accent, the watermark, the icon class and the
+ * picker's directory entry.
  *
  * Sources are named rather than detected: detection scans every file git does not ignore, Markdown included, so a doc
  * mentioning a class name would change the stylesheet.
@@ -20,174 +20,19 @@
  * light, 5.1:1 on --surface. */
 :root {
   --brand: #f59e0b;
-  /* A download that is moving or done. The theme's own mint and forest, so it is the estate's green rather than a
-   * fourth hue: 8.0:1 on dark --surface, 4.7:1 on light. */
-  --ok: #7dd3a7;
 }
 
 @media (prefers-color-scheme: light) {
   :root {
     --brand: #975800;
-    --ok: #1f7a50;
-  }
-}
-
-@theme inline {
-  --color-ok: var(--ok);
-}
-
-@theme {
-  --animate-busy: busy 0.7s linear infinite;
-  --animate-sweep: sweep 1.4s ease-in-out infinite alternate;
-
-  @keyframes busy {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  @keyframes sweep {
-    from {
-      background-position:
-        0 50%,
-        0 50%;
-    }
-    to {
-      background-position:
-        100% 50%,
-        0 50%;
-    }
-  }
-}
-
-@layer base {
-  html,
-  body {
-    @apply overflow-x-hidden;
-  }
-
-  /* Touch screens get no hover, so a tap's highlight is the only sign it landed. Preflight removes it. */
-  html {
-    -webkit-tap-highlight-color: revert;
-  }
-
-  body {
-    @apply min-h-dvh bg-bg text-control text-ink;
-    -webkit-text-size-adjust: 100%;
-  }
-
-  :focus-visible {
-    @apply outline-2 outline-offset-2 outline-brand;
-  }
-
-  /* Bordered: a button's weight unless the template says otherwise. Square, as every control in the theme is; the
-   * outline is `muted` because `rule` is too faint to show where a control is. */
-  button {
-    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 border border-muted bg-transparent px-3 py-1.5 text-meta text-ink lowercase select-none hover:bg-hover/30 active:bg-hover disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent;
-  }
-
-  input {
-    @apply min-w-0 border border-muted bg-transparent px-2.5 py-2 text-input text-ink focus:outline-2 focus:-outline-offset-2 focus:outline-brand;
-  }
-
-  ::placeholder {
-    @apply text-muted lowercase opacity-100;
-  }
-
-  dialog {
-    @apply text-ink;
-  }
-
-  dialog::backdrop {
-    @apply bg-bg/80;
   }
 }
 
 @layer components {
-  /* The weights beside the bordered default: prominent is what the page is for, and a page has at most one; quiet is a
-   * text button; bad is destructive. */
-  .primary {
-    @apply border-brand text-body text-brand;
-  }
-
-  .quiet {
-    @apply border-transparent text-muted hover:bg-transparent hover:text-ink;
-  }
-
-  .bad {
-    @apply border-bad text-bad;
-  }
-
   /* A row of a list that is itself the button: a directory in the picker. Its label is a name on disk, so it keeps
    * its case. */
   .entry {
     @apply block w-full border-0 px-3 py-2 text-left text-control normal-case break-words;
-  }
-
-  /* In flight, for as long as the request a `data-indicator` counts. Square, as the theme's controls are. */
-  .spinner {
-    @apply inline-block size-[0.9em] shrink-0 animate-busy border-2 border-current/30 border-t-current motion-reduce:animate-none;
-  }
-
-  /* Stands in for a listing on its way. A flat fill that breathes, rather than daisyUI's moving gradient. */
-  .skeleton {
-    @apply animate-pulse bg-hover/30 motion-reduce:animate-none;
-  }
-
-  /* The theme's progress bar: a hairline, the part done thicker in the row's tone. Without a value, before there is
-   * anything to count, a short length of the tone moves along it; under reduced motion it is the thicker track.
-   *
-   * The tone is a status, not decoration, so it is the one place here colour carries meaning: green is moving or
-   * done, `warn` is stalled, `bad` is failing, and `muted` is waiting on something that is not the swarm. The word
-   * beside every bar says the same, so the colour is never the only way to read a row. */
-  progress.meter {
-    --tone: var(--ink);
-    @apply block h-[3px] w-full appearance-none border-0 bg-transparent;
-    background: linear-gradient(var(--rule), var(--rule)) 0 50% / 100% 1px no-repeat;
-  }
-
-  progress.meter.ok {
-    --tone: var(--ok);
-  }
-
-  progress.meter.warn {
-    --tone: var(--warn);
-  }
-
-  progress.meter.bad {
-    --tone: var(--bad);
-  }
-
-  progress.meter.wait {
-    --tone: var(--muted);
-  }
-
-  progress.meter::-webkit-progress-bar {
-    @apply bg-transparent;
-  }
-
-  progress.meter::-webkit-progress-value {
-    background: var(--tone);
-  }
-
-  progress.meter::-moz-progress-bar {
-    background: var(--tone);
-  }
-
-  progress.meter:indeterminate {
-    @apply animate-sweep;
-    background:
-      linear-gradient(var(--tone), var(--tone)) 0 50% / 25% 3px no-repeat,
-      linear-gradient(var(--rule), var(--rule)) 0 50% / 100% 1px no-repeat;
-
-    @media (prefers-reduced-motion: reduce) {
-      animation: none;
-      background: linear-gradient(var(--rule), var(--rule)) 0 50% / 100% 3px no-repeat;
-    }
-  }
-
-  progress.meter:indeterminate::-moz-progress-bar {
-    @apply bg-transparent;
   }
 }
 
@@ -249,101 +94,5 @@
     stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
-  }
-}
-
-/* `<summary>`'s marker is the one glyph on this page no stylesheet ever
-   chose: the user agent supplies it, so it is a filled triangle in Chrome, a
-   smaller outlined one in Safari, and a different size again in Firefox.
-   `.disclosure` takes it off (both the standard property and WebKit's
-   separate pseudo-element, which `list-style` alone does not reach) and the
-   chevron inside turns instead.
-
-   The rotation is on the icon rather than a `[open]` variant per call site,
-   so a disclosure added later gets it by writing the same class names. */
-@layer components {
-  .disclosure > summary {
-    list-style: none;
-  }
-
-  .disclosure > summary::-webkit-details-marker {
-    display: none;
-  }
-
-  .disclosure-chevron {
-    transition: transform 150ms ease;
-  }
-
-  .disclosure[open] > summary .disclosure-chevron {
-    transform: rotate(90deg);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .disclosure-chevron {
-      transition: none;
-    }
-  }
-}
-
-/* <dialog> already gets `display: none` while closed and `display: block`
-   while open from the user agent stylesheet — see #add-dialog. Style the
-   open state with `open:flex` rather than an unconditional `flex`: an
-   unconditional display utility applies even while the dialog has no
-   `open` attribute, which defeats `dialog:not([open]) { display: none }`
-   and leaks the dialog into the page before it was ever shown. */
-
-/* Where the bottom sheet is, stated rather than nudged.
-   `dialog:modal` arrives from the user agent as `width: fit-content`,
-   `margin: auto` and `max-width: calc(100% - 6px - 2em)`, so margin
-   utilities asked for the full width, got 38px less than it, and — with the
-   margin pinned to zero on one side — put the whole shortfall on the other:
-   the sheet in the corner of #353. An author rule beats the user agent's
-   whatever its specificity, so saying the insets once leaves nothing for the
-   two to disagree about.
-
-   `--keyboard-inset` is the part a fixed element cannot work out for itself.
-   iOS Safari answers a keyboard by shrinking the visual viewport and leaving
-   the layout viewport alone, and fixed positioning is resolved against the
-   layout one — so `bottom: 0` was the bottom of a box the keyboard was
-   covering, and the sheet opened underneath it. `web/ms.ts` measures the
-   difference; every browser that resizes for its own keyboard measures zero,
-   which is also the fallback, so this is a no-op there rather than a second
-   correction stacked on theirs.
-
-   The height is `min()` of two different limits rather than one minus the
-   other. 85dvh is a preference — a sheet should not become the whole screen
-   when it has no reason to. What is left above the keyboard is a fact, and
-   subtracting the keyboard from the preference charges for it twice: on a
-   660px viewport with 350px of keyboard that left 211px for a sheet with
-   294px of room to sit in.
-
-   A hairline along its top edge on a phone and all the way round once it is
-   a centred dialog: with no shadow, the line is what separates it from the
-   dimmed page. */
-@layer components {
-  .sheet {
-    position: fixed;
-    inset: auto 0 var(--keyboard-inset, 0px) 0;
-    width: auto;
-    max-width: none;
-    max-height: min(85dvh, calc(100dvh - var(--keyboard-inset, 0px) - 1rem));
-    margin: 0;
-    padding: 0;
-    border: 0;
-    border-top: 1px solid var(--rule);
-    background: var(--bg);
-  }
-
-  /* Wide enough for a pointer: back to a centred dialog, where the keyboard
-     is hardware and the inset is always zero. */
-  @media (width >= 40rem) {
-    .sheet {
-      inset: 0;
-      width: 100%;
-      max-width: var(--container-panel);
-      max-height: 85dvh;
-      margin: auto;
-      border: 1px solid var(--rule);
-    }
   }
 }

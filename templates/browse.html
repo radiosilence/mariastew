@@ -22,11 +22,11 @@
     {% if !path.is_empty() %}
     <button type="button" class="quiet min-h-11 min-w-11 shrink-0"
       data-dir="" title="All destinations"
-      aria-label="All destinations">{% call icons::house(class="text-lg") %}{% endcall %}</button>
+      aria-label="All destinations">{% call icons::house(class="text-title-sm") %}{% endcall %}</button>
     {% endif %}
     {% if let Some(p) = parent %}
     <button type="button" class="quiet min-h-11 min-w-11 shrink-0"
-      data-dir="{{ p }}">{% call icons::arrow_up() %}{% endcall %} Up</button>
+      data-dir="{{ p }}">{% call icons::arrow_up() %}{% endcall %} up</button>
     {% endif %}
     {# Always shown, even at the roots, so where a download lands is never
          a guess — see #257, "keep the current path visible". Wrapped, not
@@ -40,7 +40,7 @@
          part that actually distinguishes one destination from another —
          needs. The absolute path is still what the hidden inputs below
          submit. #}
-    <span class="text-muted break-words min-w-0 flex-1">{% if label.is_empty() %}All destinations{% else %}{{ label }}{% endif %}</span>
+    <span class="text-muted break-words min-w-0 flex-1">{% if label.is_empty() %}all destinations{% else %}{{ label }}{% endif %}</span>
     {# The listing is a `readdir` against spinning disks holding a media
          library, so seconds is its normal speed, not a fault, and the wait
          is shown rather than removed. Kept alongside the skeleton below
@@ -76,9 +76,9 @@
     <div class="bg-surface p-4 text-center text-muted"
       data-class:invisible="$_browsing">
       {% if parent.is_some() %}
-      This folder is empty.
+      this folder is empty.
       {% else %}
-      No destinations are configured.
+      no destinations are configured.
       {% endif %}
     </div>
     {% else %}
@@ -143,7 +143,7 @@
          `ms.clickOnEnter`. A text field whose button is right beside it and
          whose Enter key does nothing is the one place a keyboard is guaranteed
          to be open. #}
-    <input name="name" placeholder="New folder name" enterkeyhint="done" form="mkdir-form"
+    <input name="name" placeholder="new folder name" enterkeyhint="done" form="mkdir-form"
       data-on:keydown="ms.clickOnEnter(evt, $_mkdirSubmit)"
       class="flex-1 min-h-11">
     {# Icon-only, like the home button above: this row is a text field and
@@ -157,7 +157,7 @@
     <button type="button" id="mkdir-submit" class="min-h-11 min-w-11"
       aria-label="Create folder" title="Create folder"
       data-ref="_mkdirSubmit" data-indicator="_browsing"
-      data-on:click="@post('/mkdir', {contentType: 'form', selector: '#mkdir-form'})">{% call icons::folder_plus(class="text-lg") %}{% endcall %}</button>
+      data-on:click="@post('/mkdir', {contentType: 'form', selector: '#mkdir-form'})">{% call icons::folder_plus(class="text-title-sm") %}{% endcall %}</button>
   </div>
 
   <input type="hidden" name="dir" value="{{ path }}">

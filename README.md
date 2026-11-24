@@ -130,7 +130,7 @@ Jobs skip when a change does not touch their domain. `changes` diffs a pull
 request against its base and a push against the last commit on main whose run
 passed, and sets one output per domain: `rust` (the crate, its templates and
 committed assets, `mise.toml`), `web` (the TypeScript, the stylesheet source
-and the committed assets built from them), `package` (`deploy/pulumi/`) and
+and the committed assets built from them, which `kit-check` holds to the kōan web kit), `package` (`deploy/pulumi/`) and
 `docker` (the release binaries and the image). Markdown never counts; anything under
 `.github/` counts for every domain; a manual run or a release runs everything.
 To add a domain, add an output and a `touches` allowlist to `changes`, gate the
