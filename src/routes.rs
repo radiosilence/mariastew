@@ -36,7 +36,9 @@ const SESSION_RECHECK: Duration = Duration::from_secs(1);
 /// cadence is what makes the difference visible, and `ms.streamLost` in
 /// `web/app.ts` is what acts on it.
 ///
-/// It replaces axum's keep-alive rather than joining it. Both keep a proxy from
+/// It replaces axum's keep-alive rather than joining it, which is why this
+/// stream is its own `Sse` rather than `askama_datastar::stream` (kōan
+/// standard §8). Both keep a proxy from
 /// timing an idle connection out; only this one reaches the page, and two
 /// mechanisms firing at different rates is one more thing to hold in mind than
 /// there needs to be.
@@ -91,20 +93,7 @@ pub(crate) fn rows(state: &AppState, downloads: &[Download]) -> Vec<Row> {
         .collect()
 }
 
-/// The `data:` payload for a `datastar-patch-elements` event: every line of
-/// `html` prefixed with `elements `. Split out from [`patch_elements`] so the
-/// prefixing is testable without touching `Event`'s own internals.
-fn patch_elements_data(html: &str) -> String {
-    html.lines()
-        .map(|line| format!("elements {line}"))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// Push replacement markup down the stream, Datastar's `datastar-patch-elements`
-/// event. `axum::response::sse::Event::data` turns an embedded `\n` into a
-/// repeated `data:` field, which is what makes the single joined string come out
-/// on the wire as one `data: elements ...` line per line of `html`.
+/// Push replacement markup down the stream, as a Datastar patch.
 ///
 /// This pushes markup rather than signals because a row changes at the rate of
 /// its slowest-changing part: speed, peers and the health colour all move
@@ -114,9 +103,7 @@ fn patch_elements_data(html: &str) -> String {
 /// and there is no client-side state to keep in step with it. Which rows are
 /// worth sending is decided server-side, in [`unsent`].
 fn patch_elements(html: &str) -> Event {
-    Event::default()
-        .event("datastar-patch-elements")
-        .data(patch_elements_data(html))
+    askama_datastar::Html::trusted(html).patch().into()
 }
 
 /// A frame that says only that the connection is still there.
@@ -2189,22 +2176,6 @@ mod tests {
             ..metadata
         };
         assert!(!real.is_metadata());
-    }
-
-    #[test]
-    fn patch_elements_data_prefixes_a_single_line() {
-        assert_eq!(
-            patch_elements_data("<div>hi</div>"),
-            "elements <div>hi</div>"
-        );
-    }
-
-    #[test]
-    fn patch_elements_data_prefixes_every_line() {
-        assert_eq!(
-            patch_elements_data("<div>\n  <span>hi</span>\n</div>"),
-            "elements <div>\nelements   <span>hi</span>\nelements </div>"
-        );
     }
 
     #[test]

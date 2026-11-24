@@ -52,6 +52,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "askama_datastar"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e5cd2f874d2d2450e68be63cd87a3ede3b67454adf6e39c326a63c23611ecde"
+dependencies = [
+ "askama",
+ "axum",
+ "datastar",
+ "form_urlencoded",
+ "futures-util",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "askama_derive"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -415,6 +430,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce6e4c961d6cd6c9a86db418387425e8bdeaf05b3c8bc1411e6dca4c252f1453"
 dependencies = [
  "hybrid-array",
+]
+
+[[package]]
+name = "datastar"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49a2209ee5f8954be4d6d90f253630d2be400965e604e7f8df446a75400a4ca8"
+dependencies = [
+ "axum",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -916,6 +942,7 @@ version = "0.3.3"
 dependencies = [
  "anyhow",
  "askama",
+ "askama_datastar",
  "async-stream",
  "axum",
  "axum-extra",

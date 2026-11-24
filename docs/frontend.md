@@ -236,16 +236,13 @@ mise run js
 
 rolldown bundles `web/main.ts` into one minified file whose name carries a
 content hash, so a deploy's new script cannot be served from a cache holding
-the old one; `build.rs` finds it and `main.rs` serves it. `main.ts` imports
-`ms.ts` before Datastar, and ES modules evaluate in import order, so `ms.*`
-exists before Datastar first scans the document.
+the old one; `build.rs` finds it and `main.rs` serves it.
 
-Datastar itself is vendored under `web/vendor/`, because npm carries only its
-pre-1.0 betas. To move to another release:
-
-```sh
-DATASTAR_VERSION=v1.0.4 mise run datastar
-mise run js
-```
+Datastar is not in the bundle. It is the copy the `askama_datastar` crate
+vendors and pins, served at `/assets/datastar.js` under a hash of its contents,
+so every radiosilence UI runs the same release and moves to the next one with
+the crate. `page.html` loads it with a module script after the bundle's, and
+module scripts run in the order they appear, so `ms.*` exists before Datastar
+first scans the document.
 
 `mise run typecheck` checks `web/` against `tsconfig.web.json`.

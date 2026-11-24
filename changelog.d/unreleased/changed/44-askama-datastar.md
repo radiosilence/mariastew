@@ -1,0 +1,1 @@
+- **Datastar 1.0.5, served on its own.** Datastar is the copy the shared askama_datastar crate vendors, loaded beside the page's script rather than bundled into it, so it is cached for good at its own address and moves to new releases with the crate. It moves from 1.0.4 to 1.0.5, and a carriage return in a download's name no longer cuts its row's patch short.

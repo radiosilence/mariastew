@@ -6,8 +6,9 @@ A small Rust service in front of aria2. aria2 does the downloading and holds
 all the state — there is no database on this side, so a restart re-reads
 reality instead of reconciling with it, and a signed-in session lives only in
 memory, so a deploy signs everyone out. The frontend is server-rendered HTML
-patched over SSE ([Datastar](https://data-star.dev), vendored under
-`web/vendor/` and bundled with the app's own script), not a client-side app.
+patched over SSE ([Datastar](https://data-star.dev), the copy the
+[`askama_datastar`](https://github.com/radiosilence/askama-datastar) crate
+vendors), not a client-side app.
 
 Files land straight in the media library under a name you pick, so nothing has
 to be moved afterwards. Why it behaves as it does — the polling rates, what a
