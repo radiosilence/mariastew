@@ -256,7 +256,7 @@
          registered" errors) and the label. The signals are cleared before
          firing so a stale error from a previous attempt does not linger through
          a fresh one. #}
-    <button type="button" id="add-submit" class="min-h-12 flex-[2]"
+    <button type="button" id="add-submit" class="min-h-12 flex-[2] fill"
       data-ref="_addSubmit" data-indicator="_adding" data-attr:disabled="$_adding"
       data-on:click="$_addStatus = ''; $_addMessage = ''; @post('/add', {contentType: 'form', selector: '#add-form'})">
       <span data-show="$_adding" class="spinner"></span>
