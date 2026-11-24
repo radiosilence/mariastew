@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0
+
+### Changed
+
+- **Lighter panels.** Panels are the kit's lighter ground rather than hairline boxes.
+
 ## 0.5.0
 
 ### Changed
