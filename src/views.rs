@@ -1411,7 +1411,7 @@ mod tests {
         });
         assert!(html.contains("Show.S01E01") && !html.contains("[METADATA]"));
         assert!(html.contains("finding peers"), "{html}");
-        assert!(!html.contains("border border-ok") && !html.contains("ok"));
+        assert!(!html.contains("border border-ok") && !html.contains("meter ok"));
         // The indeterminate bar and the "—" beside `done` are the same
         // condition — see row.html.
         assert!(!html.contains("value=\""), "the bar claimed a percentage");

@@ -235,12 +235,13 @@ jobs:
       contents: read
       # @radiosilence/theme is on GitHub Packages, which wants a token even to read.
       packages: read
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
+      # Only this step sees the token; `just css` below finds .npmrc.auth already written.
       - run: just auth && aube ci
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: mise run lint
       - run: mise run typecheck:web
       - run: just css && mise run js
