@@ -15,9 +15,11 @@ auth:
     [ -n "$token" ] || { echo "no GitHub token: run 'gh auth login', or set GH_TOKEN" >&2; exit 1; }
     printf '//npm.pkg.github.com/:_authToken=%s\n' "$token" > .npmrc.auth
 
-# Compile styles/ into assets/app.css and copy the theme's typeface beside it, where the stylesheet's relative font URL
-# points. Both are committed because the server embeds them; CI fails a build where either is stale.
+# Check the markup against the kōan web kit, compile styles/ into assets/app.css and copy the theme's typeface beside it,
+# where the stylesheet's relative font URL points. Both outputs are committed because the server embeds them; CI fails a
+# build where either is stale, or where a template or the Rust that writes markup uses a class outside the kit.
 css: theme
+    node node_modules/@radiosilence/theme/kit-check.mjs templates src web
     ./node_modules/.bin/tailwindcss --input styles/app.css --output assets/app.css --minify
     cp node_modules/@radiosilence/theme/geist-mono.woff2 assets/geist-mono.woff2
 

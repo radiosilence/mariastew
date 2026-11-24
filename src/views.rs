@@ -648,7 +648,7 @@ mod tests {
         .render()
         .unwrap();
         assert!(
-            empty.contains("Nothing downloading") && empty.contains(r#"data-icon="inbox""#),
+            empty.contains("nothing downloading") && empty.contains(r#"data-icon="inbox""#),
             "no empty state in the list container: {empty}"
         );
 
@@ -659,7 +659,7 @@ mod tests {
         .render()
         .unwrap();
         assert!(
-            !occupied.contains("Nothing downloading") && occupied.contains(r#"id="dl-abc""#),
+            !occupied.contains("nothing downloading") && occupied.contains(r#"id="dl-abc""#),
             "the empty state showed alongside a download: {occupied}"
         );
     }
@@ -678,7 +678,7 @@ mod tests {
         .unwrap();
         assert!(down.contains("unreachable"), "no warning: {down}");
         assert!(
-            !down.contains("Nothing downloading"),
+            !down.contains("nothing downloading"),
             "an outage was reported as an empty queue: {down}"
         );
     }
@@ -755,10 +755,9 @@ mod tests {
         };
 
         // Finished, so the one row rendered here is also the only one that
-        // carries the tick.
+        // carries the tick, on its clear button.
         // Named rather than counted: every call site added later changes a
-        // count, and none of them says whether the tick is still on the
-        // finished badge.
+        // count, and none of them says whether the tick is still there.
         let downloads = render(&Download {
             completed_length: 1_073_741_824,
             ..moving()
@@ -1128,7 +1127,7 @@ mod tests {
         .render()
         .unwrap();
         assert!(
-            browse.contains("This folder is empty"),
+            browse.contains("this folder is empty"),
             "no empty-state message for a real, empty directory: {browse}"
         );
         assert!(
@@ -1380,18 +1379,17 @@ mod tests {
         }
     }
 
-    /// A finished row used to look exactly like every other row except for
-    /// a word in an outlined badge — easy to miss in a list being scanned
-    /// quickly. Filled and checked is the one state meant to pop.
+    /// A finished row is the one state meant to stand out in a list being
+    /// scanned quickly, so it alone carries a status mark beside its word.
     #[test]
-    fn a_finished_row_gets_a_filled_badge_and_the_rest_do_not() {
+    fn a_finished_row_gets_a_status_mark_and_the_rest_do_not() {
         let finished = render(&Download {
             completed_length: 1_073_741_824,
             download_speed: 0,
             ..moving()
         });
-        assert!(finished.contains("border border-ok"));
-        assert!(!render(&moving()).contains("border border-ok"));
+        assert!(finished.contains("status ok"));
+        assert!(!render(&moving()).contains("status ok"));
     }
 
     /// #372: the metadata pass reaches `Complete` when the *torrent file*
@@ -1411,7 +1409,7 @@ mod tests {
         });
         assert!(html.contains("Show.S01E01") && !html.contains("[METADATA]"));
         assert!(html.contains("finding peers"), "{html}");
-        assert!(!html.contains("border border-ok") && !html.contains("meter ok"));
+        assert!(!html.contains("status ok") && !html.contains("meter ok"));
         // The indeterminate bar and the "—" beside `done` are the same
         // condition — see row.html.
         assert!(!html.contains("value=\""), "the bar claimed a percentage");
@@ -1429,11 +1427,11 @@ mod tests {
             download_speed: 0,
             ..moving()
         });
-        assert!(finished.contains("Clear"), "{finished}");
+        assert!(finished.contains(" clear</button>"), "{finished}");
         assert!(!finished.contains(r#"class="bad "#));
 
         let unfinished = render(&moving());
-        assert!(unfinished.contains("Cancel &#38; delete"), "{unfinished}");
+        assert!(unfinished.contains("cancel &#38; delete"), "{unfinished}");
         assert!(unfinished.contains(r#"class="bad "#), "{unfinished}");
     }
 
@@ -1528,7 +1526,7 @@ mod tests {
             "a row on its way out has nothing worth pressing: {html}"
         );
         assert!(
-            !html.contains("border border-ok"),
+            !html.contains("status ok"),
             "a row being cleared is not finished with: {html}"
         );
     }
@@ -1740,7 +1738,7 @@ mod tests {
                 },
             ],
         );
-        assert!(page.contains("Logs"), "no logs disclosure: {page}");
+        assert!(page.contains("logs <span"), "no logs disclosure: {page}");
         assert!(page.contains("added — destination /mnt/kontent/movies"));
         let first = page.find("added —").unwrap();
         let second = page.find("keeping 1 of 3").unwrap();
@@ -1782,7 +1780,7 @@ mod tests {
     /// lost rather than never having been recorded.
     #[test]
     fn a_download_with_no_history_shows_no_log_panel_at_all() {
-        assert!(!render(&moving()).contains("Logs"));
+        assert!(!render(&moving()).contains("logs <span"));
     }
 
     #[test]

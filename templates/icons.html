@@ -6,7 +6,7 @@
      weigh less than the request that would fetch them, they need no
      JavaScript to appear (nothing else on this page does either), and an
      inline `<svg>` takes its colour from `currentColor` and its size from
-     the text around it — so the tick inside a success badge is the badge's
+     the text around it — so the tick on the clear button is the button's
      green without anything being told twice.
 
      Every icon is `aria-hidden`: each one here either sits beside the text
@@ -16,7 +16,7 @@
      `data-icon` names the Lucide icon in the markup it produces. Tests
      assert on that rather than counting `<svg>`s — a count says only that
      the number changed, which every future call site will do, while a name
-     says whether the tick is still on the finished badge.
+     says whether the tick is still on the clear button.
 
      Adding one: call `icons::<name>()` from a template and run
      `mise run mariastew:icons` — it adds a macro sourced from
@@ -63,7 +63,6 @@
      so it is a filled triangle in Chrome, a small outlined one in Safari, and
      a different size again in Firefox. `.disclosure` in styles/app.css hides
      that marker and turns this one on open. #}
-{% macro chevron_right(class="") %}<svg class="icon disclosure-chevron {{ class }}" data-icon="chevron-right" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>{% endmacro %}
 
 {% macro x(class="") %}<svg class="icon {{ class }}" data-icon="x" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>{% endmacro %}
 

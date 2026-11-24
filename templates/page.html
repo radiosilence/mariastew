@@ -103,7 +103,7 @@
 <header class="border-b border-rule p-4">
   <button type="button" class="primary min-h-14 w-full"
     aria-label="Add download" title="Add download"
-    data-on:click="$_addDialog.showModal()">{% call icons::magnet(class="text-3xl") %}{% endcall %}</button>
+    data-on:click="$_addDialog.showModal()">{% call icons::magnet(class="text-title") %}{% endcall %}</button>
 </header>
 
 {# A bottom sheet, not a centered dialog: pinned to the bottom edge, which is
@@ -114,9 +114,14 @@
      so it starts collapsed behind its own disclosure rather than dumping a
      directory tree in front of someone who has not pasted anything yet.
      Its geometry — the insets, the width, the height cap and the room the
-     keyboard needs — is `.sheet` in the stylesheet rather than utilities
-     here, because the user agent has rules of its own about all four and
-     an author rule wins outright where a margin utility only argues (#353). #}
+     keyboard needs — is the kit's `.sheet` rather than utilities here,
+     because the user agent has rules of its own about all four and an
+     author rule wins outright where a margin utility only argues (#353).
+     `web/ms.ts` sets the `--keyboard-inset` it reads.
+
+     `open:flex` rather than `flex`: an unconditional display utility
+     applies while the dialog is closed too, overriding the user agent's
+     `dialog:not([open]) { display: none }` and leaking it into the page. #}
 {# It closes itself off `$_addStatus` rather than off the fetch, so it does not
      care whether the answer came back as a plain JSON body or an SSE patch.
 
@@ -175,7 +180,7 @@
       data-on:paste="ms.pasteMany(evt)"
       data-on:keydown="ms.clickOnEnter(evt, $_addSubmit)">
       <div class="group/magnet flex gap-2" data-magnet-row>
-        <input name="magnet" placeholder="Paste a magnet link" enterkeyhint="go"
+        <input name="magnet" placeholder="paste a magnet link" enterkeyhint="go"
           inputmode="url" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"
           class="min-h-14 flex-1">
         {# Where the clipboard is asked for, and the only place it is. Safari
@@ -184,18 +189,17 @@
              for the same reason the picker's controls are: the word would take
              width the magnet needs. #}
         <button type="button" class="min-h-14 min-w-14 shrink-0" data-action="paste"
-          aria-label="Paste from clipboard" title="Paste from clipboard">{% call icons::clipboard(class="text-xl") %}{% endcall %}</button>
+          aria-label="Paste from clipboard" title="Paste from clipboard">{% call icons::clipboard(class="text-title-sm") %}{% endcall %}</button>
         <button type="button" class="quiet min-h-14 min-w-14 shrink-0 group-only/magnet:hidden" data-action="remove"
-          aria-label="Remove this magnet" title="Remove this magnet">{% call icons::x(class="text-xl") %}{% endcall %}</button>
+          aria-label="Remove this magnet" title="Remove this magnet">{% call icons::x(class="text-title-sm") %}{% endcall %}</button>
       </div>
     </div>
     <button type="button" class="quiet min-h-11 self-start px-0"
-      data-on:click="ms.addMagnetRow($_magnetRows)">{% call icons::plus() %}{% endcall %} Another magnet</button>
+      data-on:click="ms.addMagnetRow($_magnetRows)">{% call icons::plus() %}{% endcall %} another magnet</button>
     <details class="disclosure border border-rule">
-      <summary class="min-h-11 flex items-center gap-2 p-3 cursor-pointer lowercase">
-        {% call icons::chevron_right() %}{% endcall %}
+      <summary class="min-h-11 flex items-center gap-2 p-3">
         {% call icons::folder() %}{% endcall %}
-        Destination <span class="text-muted">— tap to choose</span>
+        destination <span class="text-muted">— tap to choose</span>
       </summary>
       <div class="border-t border-rule p-3">
         {{ self.picker()?|safe }}
@@ -224,7 +228,7 @@
        The icon is a sibling of the message, not inside it: `data-text` replaces
        the element's whole content, so anything nested in the same element is
        gone the first time an error arrives. #}
-  <p class="flex shrink-0 items-start gap-1.5 px-4 text-bad"
+  <p class="notice bad mx-4 my-0 shrink-0 flex-nowrap"
     data-show="$_addStatus === 'error'">
     {% call icons::triangle_alert() %}{% endcall %}
     <span data-text="$_addMessage"></span>
@@ -238,7 +242,7 @@
        footer into the field rather than scrolling the form (#353). #}
   <div class="flex shrink-0 gap-2 border-t border-rule p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
     <form method="dialog" class="flex flex-1">
-      <button class="quiet min-h-12 w-full">Cancel</button>
+      <button class="quiet min-h-12 w-full">cancel</button>
     </form>
     {# `selector` because this button lives outside #add-form — pinned in
          the footer rather than scrolling away with it — so Datastar is told
@@ -251,11 +255,11 @@
          registered" errors) and the label. The signals are cleared before
          firing so a stale error from a previous attempt does not linger through
          a fresh one. #}
-    <button type="button" id="add-submit" class="primary min-h-12 flex-[2]"
+    <button type="button" id="add-submit" class="min-h-12 flex-[2]"
       data-ref="_addSubmit" data-indicator="_adding" data-attr:disabled="$_adding"
       data-on:click="$_addStatus = ''; $_addMessage = ''; @post('/add', {contentType: 'form', selector: '#add-form'})">
       <span data-show="$_adding" class="spinner"></span>
-      <span data-text="$_adding ? 'Adding…' : 'Add'"></span>
+      <span data-text="$_adding ? 'adding…' : 'add'"></span>
     </button>
   </div>
 </dialog>
