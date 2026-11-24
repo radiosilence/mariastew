@@ -8,12 +8,12 @@ importers:
 
   .:
     devDependencies:
+      '@radiosilence/theme':
+        specifier: 0.1.0
+        version: 0.1.0
       '@tailwindcss/cli':
         specifier: 4.3.3
         version: 4.3.3
-      daisyui:
-        specifier: 5.7.50
-        version: 5.7.50
       lucide-static:
         specifier: 1.66.0
         version: 1.66.0
@@ -386,6 +386,9 @@ packages:
     resolution: {integrity: sha512-dfUnCxiN9H4ap84DvD2ubjw+3vUNpstxa0TneY/Paat8a3R4uQZDLSvWjmznAY/DoahqTHl9V46HF/Zs3F29pg==}
     engines: {node: '>= 10.0.0'}
 
+  '@radiosilence/theme@0.1.0':
+    resolution: {gitHosted: true, integrity: sha512-bK064SfFlL0kx/sWtz8md/IEE3AdmR3hXhYnkFmDwJJ8mGZUQLSHsD2aMF2xjjDHpaSmi3mZOMHcPMGUXXmD+g==, tarball: https://npm.pkg.github.com/download/@radiosilence/theme/0.1.0/e5099485f3ccf8c00160da41291e31e7735b4e8c}
+
   '@rolldown/binding-android-arm-eabi@1.2.16':
     resolution: {integrity: sha512-ia3DwAs0OsMGS7+IConptSiyk9pEXkOx/AbJ2n/lAGxH3QkWQus1t8d7gnAT38FCU2sQu8lUbeR6AiZFv4JxaA==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -694,9 +697,6 @@ packages:
   braces@3.0.3:
     resolution: {integrity: sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==}
     engines: {node: '>=8'}
-
-  daisyui@5.7.50:
-    resolution: {integrity: sha512-+/LRqnTCoc7s/bJEKKwtJSwzeXCVdAmRdNmZeZzgHCaQ9PJyl7j+2V2U32GQDMyD+VDkP9e/+JGoC72Y1hLk7w==}
 
   detect-libc@1.0.3:
     resolution: {integrity: sha512-pGjwhsmsp4kL2RTz08wcOlGN83otlqHeD/Z5T8GXZB+/YcpQ/dgo+lbU8ZsGxV0HIvqqxo9l7mqYwyYMD9bKDg==}
@@ -1087,6 +1087,8 @@ snapshots:
       '@parcel/watcher-win32-ia32': 2.5.1
       '@parcel/watcher-win32-x64': 2.5.1
 
+  '@radiosilence/theme@0.1.0': {}
+
   '@rolldown/binding-android-arm-eabi@1.2.16':
     optional: true
 
@@ -1275,8 +1277,6 @@ snapshots:
   braces@3.0.3:
     dependencies:
       fill-range: 7.1.1
-
-  daisyui@5.7.50: {}
 
   detect-libc@1.0.3: {}
 

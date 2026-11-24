@@ -13,19 +13,19 @@
        sitting 12px below the text it belongs to. A path long enough to wrap past 44px
        then centres the buttons against the whole block, which is the only
        thing a 44px control can do next to a taller neighbour. #}
-  <div class="flex items-center gap-2 text-sm">
+  <div class="flex items-center gap-2">
     {# Up stops at a root, because a root's real parent is outside every
          allowed destination and browsing there is refused — so from inside
          one there was no Up button and no other way back, and a destination
          once chosen could only be undone by reloading the page. This goes
          to the empty path, which is the root list itself. #}
     {% if !path.is_empty() %}
-    <button type="button" class="btn btn-sm btn-ghost min-h-11 min-w-11 shrink-0"
+    <button type="button" class="quiet min-h-11 min-w-11 shrink-0"
       data-dir="" title="All destinations"
       aria-label="All destinations">{% call icons::house(class="text-lg") %}{% endcall %}</button>
     {% endif %}
     {% if let Some(p) = parent %}
-    <button type="button" class="btn btn-sm btn-ghost min-h-11 min-w-11 shrink-0"
+    <button type="button" class="quiet min-h-11 min-w-11 shrink-0"
       data-dir="{{ p }}">{% call icons::arrow_up() %}{% endcall %} Up</button>
     {% endif %}
     {# Always shown, even at the roots, so where a download lands is never
@@ -40,14 +40,14 @@
          part that actually distinguishes one destination from another —
          needs. The absolute path is still what the hidden inputs below
          submit. #}
-    <span class="font-mono opacity-70 break-words min-w-0 flex-1">{% if label.is_empty() %}All destinations{% else %}{{ label }}{% endif %}</span>
+    <span class="text-muted break-words min-w-0 flex-1">{% if label.is_empty() %}All destinations{% else %}{{ label }}{% endif %}</span>
     {# The listing is a `readdir` against spinning disks holding a media
          library, so seconds is its normal speed, not a fault, and the wait
          is shown rather than removed. Kept alongside the skeleton below
          because this line is the one thing the wait leaves standing and
          stale: the path still names the folder being left until the answer
          arrives, so something beside it has to say that is not the answer. #}
-    <span class="loading loading-spinner loading-xs shrink-0" data-show="$_browsing"></span>
+    <span class="spinner" data-show="$_browsing"></span>
   </div>
 
   {# Skeleton rows for the wait, rather than the previous folder's contents
@@ -73,7 +73,7 @@
     {# A blank <ul> and a folder with nothing in it looked identical — the
          owner drilled into `downloads` and, seeing nothing, had no way to
          tell "empty" from "broken". Said outright instead. #}
-    <div class="rounded-box bg-base-200 p-4 text-center text-sm opacity-60"
+    <div class="bg-surface p-4 text-center text-muted"
       data-class:invisible="$_browsing">
       {% if parent.is_some() %}
       This folder is empty.
@@ -86,15 +86,6 @@
          children (a real movie library, one folder per film) is one level of
          browsing, not a bug, and it must not push the rest of the dialog —
          the magnet field above, the Add/Cancel row below — off screen.
-
-         Plain utilities rather than DaisyUI's `.menu`: `.menu` sizes itself
-         to `width: fit-content` and lays each item out as a `display: grid`
-         row with a `max-content` track, both built for a sidebar/dropdown
-         that should hug its widest item — exactly backwards for a list that
-         must wrap a name to the width it is given. `.menu`'s own item rule
-         out-specifies a plain utility class, so overriding `display` on the
-         link one property at a time turns into a losing fight with the
-         component; a plain list styled by hand does not have that fight.
 
          Each name is wrapped with no line cap, not truncated with an ellipsis
          and not clamped to a fixed number of lines either. A real release name
@@ -114,7 +105,7 @@
          `{% for %}` and `{% endfor %}` shipped once per folder: 155KB of a
          205KB response, invisible in the browser and re-parsed on every
          morph. #}
-    <ul class="flex w-full max-h-[40dvh] flex-col gap-1 overflow-y-auto overscroll-contain rounded-box bg-base-200 p-2 text-sm"
+    <ul class="flex w-full max-h-[40dvh] flex-col overflow-y-auto overscroll-contain bg-surface p-1"
       data-class:invisible="$_browsing">
       {# A `<button>`, not an `<a>`. These were anchors with no `href`, which
            is neither focusable nor announced as anything actionable — the
@@ -122,13 +113,13 @@
            a screen reader, while looking identical. `text-left` because a
            button centres its label and these are wrapped paths. #}
       {% for d in dirs %}
-      <li><button type="button" class="block w-full min-h-11 break-words rounded-field px-3 py-2 text-left hover:bg-base-300"
+      <li><button type="button" class="entry min-h-11"
         data-dir="{{ d.path }}">{{ d.name }}</button></li>
       {% endfor %}
     </ul>
     {% endif %}
 
-    <div class="absolute inset-0 flex flex-col gap-1 overflow-hidden rounded-box bg-base-200 p-2"
+    <div class="absolute inset-0 flex flex-col gap-1 overflow-hidden bg-surface p-1"
       data-show="$_browsing" aria-hidden="true">
       <div class="skeleton h-11 w-11/12 shrink-0"></div>
       <div class="skeleton h-11 w-2/3 shrink-0"></div>
@@ -154,7 +145,7 @@
          to be open. #}
     <input name="name" placeholder="New folder name" enterkeyhint="done" form="mkdir-form"
       data-on:keydown="ms.clickOnEnter(evt, $_mkdirSubmit)"
-      class="input input-bordered input-sm flex-1 min-h-11 focus:outline-primary focus:-outline-offset-2">
+      class="flex-1 min-h-11">
     {# Icon-only, like the home button above: this row is a text field and
          its button on a phone, and the word took the width a folder name
          needs to be typed in. #}
@@ -163,7 +154,7 @@
          them, so the signal `#picker` sets covers the delegated handler and
          nothing else. Creating a folder answers with the same picker after
          the same readdir, and showed nothing at all while it did. #}
-    <button type="button" id="mkdir-submit" class="btn btn-sm min-h-11 min-w-11"
+    <button type="button" id="mkdir-submit" class="min-h-11 min-w-11"
       aria-label="Create folder" title="Create folder"
       data-ref="_mkdirSubmit" data-indicator="_browsing"
       data-on:click="@post('/mkdir', {contentType: 'form', selector: '#mkdir-form'})">{% call icons::folder_plus(class="text-lg") %}{% endcall %}</button>

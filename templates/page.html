@@ -22,7 +22,8 @@
 <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <link rel="manifest" href="/assets/manifest.webmanifest">
-<meta name="theme-color" content="#1b1210">
+<meta name="theme-color" content="#1e1e1e" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <link rel="stylesheet" href="/assets/app.css">
 <script type="module" src="{{ self.app_js_path() }}"></script>
 {# After the app's: module scripts run in document order, and `ms` has to exist
@@ -86,8 +87,7 @@
   data-on:datastar-fetch="evt.detail.el === el && ms.streamEvent(evt)"
   data-on-interval__duration.5s="ms.streamLost() && @get('/stream')"
   data-on:visibilitychange__document="!document.hidden && @get('/stream')"
-  data-signals__ifmissing="{_addStatus: '', _addMessage: '', _addDone: []}"
-  class="min-h-dvh bg-base-200">
+  data-signals__ifmissing="{_addStatus: '', _addMessage: '', _addDone: []}">
 
 {# The header is the primary action, not a name plus an action — the person
      already knows what they opened, and the name would only spend the
@@ -99,11 +99,9 @@
 
      Nothing is reset here: closing is what clears an abandoned attempt, and
      that is the one event every dismissal raises. #}
-{# A border rather than the shadow it used to cast: the theme is flat, and on
-     a dark surface a small drop shadow is invisible anyway — it was drawing a
-     separation the eye could not see. #}
-<header class="bg-base-100 border-b border-base-300 p-4">
-  <button type="button" class="btn btn-primary btn-lg min-h-14 w-full"
+{# A hairline rather than a shadow: the theme is flat. #}
+<header class="border-b border-rule p-4">
+  <button type="button" class="primary min-h-14 w-full"
     aria-label="Add download" title="Add download"
     data-on:click="$_addDialog.showModal()">{% call icons::magnet(class="text-3xl") %}{% endcall %}</button>
 </header>
@@ -138,8 +136,8 @@
 <dialog id="add-dialog" closedby="any" data-ref="_addDialog"
   data-effect="if ($_addStatus === 'ok') el.close(); else if ($_addStatus === 'error') ms.dropMagnets($_magnetRows, $_addDone)"
   data-on:close="$_addStatus = ''; $_addMessage = ''; ms.resetMagnets($_magnetRows); @get('/browse')"
-  class="sheet open:flex flex-col rounded-t-2xl sm:rounded-box bg-base-100 shadow-xl backdrop:bg-black/50">
-  <div class="mx-auto mt-3 h-1.5 w-10 shrink-0 rounded-full bg-base-300 sm:hidden"></div>
+  class="sheet open:flex flex-col">
+  <div class="mx-auto mt-3 h-1 w-10 shrink-0 bg-rule sm:hidden"></div>
   {# `autofocus` on the form, which takes `tabindex="-1"` to be focusable at
        all. Dropping the attribute from the field did not stop the keyboard:
        `showModal()` focuses the first focusable descendant when nothing claims
@@ -179,27 +177,27 @@
       <div class="group/magnet flex gap-2" data-magnet-row>
         <input name="magnet" placeholder="Paste a magnet link" enterkeyhint="go"
           inputmode="url" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"
-          class="input input-bordered input-lg min-h-14 min-w-0 flex-1 text-base focus:outline-primary focus:-outline-offset-2">
+          class="min-h-14 flex-1">
         {# Where the clipboard is asked for, and the only place it is. Safari
              anchors its Paste bubble to the touch that asked, so asking here
              puts it against the field it fills — see `pasteInto` in app.ts. Icon-only
              for the same reason the picker's controls are: the word would take
              width the magnet needs. #}
-        <button type="button" class="btn btn-lg min-h-14 shrink-0" data-action="paste"
+        <button type="button" class="min-h-14 min-w-14 shrink-0" data-action="paste"
           aria-label="Paste from clipboard" title="Paste from clipboard">{% call icons::clipboard(class="text-xl") %}{% endcall %}</button>
-        <button type="button" class="btn btn-ghost btn-lg min-h-14 shrink-0 group-only/magnet:hidden" data-action="remove"
+        <button type="button" class="quiet min-h-14 min-w-14 shrink-0 group-only/magnet:hidden" data-action="remove"
           aria-label="Remove this magnet" title="Remove this magnet">{% call icons::x(class="text-xl") %}{% endcall %}</button>
       </div>
     </div>
-    <button type="button" class="btn btn-ghost btn-sm self-start"
+    <button type="button" class="quiet min-h-11 self-start px-0"
       data-on:click="ms.addMagnetRow($_magnetRows)">{% call icons::plus() %}{% endcall %} Another magnet</button>
-    <details class="disclosure rounded-box border border-base-300">
-      <summary class="min-h-11 flex items-center gap-2 p-3 cursor-pointer text-sm">
+    <details class="disclosure border border-rule">
+      <summary class="min-h-11 flex items-center gap-2 p-3 cursor-pointer lowercase">
         {% call icons::chevron_right() %}{% endcall %}
         {% call icons::folder() %}{% endcall %}
-        Destination <span class="opacity-50">— tap to choose</span>
+        Destination <span class="text-muted">— tap to choose</span>
       </summary>
-      <div class="border-t border-base-300 p-3">
+      <div class="border-t border-rule p-3">
         {{ self.picker()?|safe }}
       </div>
     </details>
@@ -226,7 +224,7 @@
        The icon is a sibling of the message, not inside it: `data-text` replaces
        the element's whole content, so anything nested in the same element is
        gone the first time an error arrives. #}
-  <p class="flex shrink-0 items-start gap-1.5 px-4 text-sm text-error"
+  <p class="flex shrink-0 items-start gap-1.5 px-4 text-bad"
     data-show="$_addStatus === 'error'">
     {% call icons::triangle_alert() %}{% endcall %}
     <span data-text="$_addMessage"></span>
@@ -238,9 +236,9 @@
        a `flex-1` form, so they shrink by default, and a sheet short of room —
        every sheet, while the keyboard was taking most of it — squeezed the
        footer into the field rather than scrolling the form (#353). #}
-  <div class="flex shrink-0 gap-2 border-t border-base-300 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-    <form method="dialog" class="flex-1">
-      <button class="btn btn-ghost min-h-12 w-full">Cancel</button>
+  <div class="flex shrink-0 gap-2 border-t border-rule p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+    <form method="dialog" class="flex flex-1">
+      <button class="quiet min-h-12 w-full">Cancel</button>
     </form>
     {# `selector` because this button lives outside #add-form — pinned in
          the footer rather than scrolling away with it — so Datastar is told
@@ -253,10 +251,10 @@
          registered" errors) and the label. The signals are cleared before
          firing so a stale error from a previous attempt does not linger through
          a fresh one. #}
-    <button type="button" id="add-submit" class="btn btn-primary min-h-12 flex-[2]"
+    <button type="button" id="add-submit" class="primary min-h-12 flex-[2]"
       data-ref="_addSubmit" data-indicator="_adding" data-attr:disabled="$_adding"
       data-on:click="$_addStatus = ''; $_addMessage = ''; @post('/add', {contentType: 'form', selector: '#add-form'})">
-      <span data-show="$_adding" class="loading loading-spinner loading-sm"></span>
+      <span data-show="$_adding" class="spinner"></span>
       <span data-text="$_adding ? 'Adding…' : 'Add'"></span>
     </button>
   </div>
@@ -271,7 +269,7 @@
      version is looked for. It clears the home indicator for the same reason
      the dialog's footer does — it is the last element on the page, so on a
      phone with a gesture bar it would otherwise sit under it. #}
-<footer class="pb-[max(1rem,env(safe-area-inset-bottom))] text-center text-xs opacity-40">
+<footer class="pb-[max(1rem,env(safe-area-inset-bottom))] text-center text-fine text-muted">
   v{{ self.version() }}
 </footer>
 

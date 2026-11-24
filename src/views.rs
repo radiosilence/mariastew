@@ -53,9 +53,10 @@ pub struct Row {
     pub percent_display: Option<String>,
     #[allow(dead_code)]
     pub health: Health,
-    /// DaisyUI modifier for the bar — the fast way to read a row at arm's
-    /// length. The icons carry the same meaning for a washed-out screen.
-    pub bar_class: &'static str,
+    /// The bar's tone (`progress.meter` in styles/app.css) — the fast way to
+    /// read a row at arm's length. The icons carry the same meaning for a
+    /// washed-out screen.
+    pub tone: &'static str,
     pub state: &'static str,
     /// Absent when idle — 0 B/s reads as measured stasis, not absence.
     pub down: Option<String>,
@@ -91,8 +92,8 @@ pub struct Row {
     pub clearing: bool,
 }
 
-/// DaisyUI modifier and the word for it, together — colour alone is never
-/// the only way to read a row (see `Row::bar_class`).
+/// The bar's tone and the word for it, together — colour alone is never
+/// the only way to read a row (see `Row::tone`).
 ///
 /// The words are the ones a person would use about a download, not the ones
 /// the enum uses about a swarm. `Health::Moving` naming itself "moving" on
@@ -113,18 +114,18 @@ pub struct Row {
 /// it is. What is deliberately *not* split is the resolving magnet itself —
 /// see the note on `Health::Resolving` for the reading that turned out to
 /// mean nothing.
-fn bar_class_and_state(health: Health) -> (&'static str, &'static str) {
+fn tone_and_state(health: Health) -> (&'static str, &'static str) {
     match health {
-        Health::Moving => ("progress-success", "downloading"),
-        Health::Complete => ("progress-success", "downloaded"),
-        Health::Choked => ("progress-warning", "stalled"),
-        Health::Blocked => ("progress-error", "can't connect"),
-        Health::Errored => ("progress-error", "failed"),
-        Health::Dead => ("progress-error", "no seeders"),
-        Health::Queued => ("progress-info", "queued"),
-        Health::Resolving => ("progress-info", "finding peers"),
-        Health::Verifying => ("progress-info", "checking files"),
-        Health::Paused => ("progress-info", "paused"),
+        Health::Moving => ("ok", "downloading"),
+        Health::Complete => ("ok", "downloaded"),
+        Health::Choked => ("warn", "stalled"),
+        Health::Blocked => ("bad", "can't connect"),
+        Health::Errored => ("bad", "failed"),
+        Health::Dead => ("bad", "no seeders"),
+        Health::Queued => ("wait", "queued"),
+        Health::Resolving => ("wait", "finding peers"),
+        Health::Verifying => ("wait", "checking files"),
+        Health::Paused => ("wait", "paused"),
     }
 }
 
@@ -133,7 +134,7 @@ fn bar_class_and_state(health: Health) -> (&'static str, &'static str) {
 /// words the badge is about to show, rather than a second vocabulary for the
 /// same set of facts.
 pub fn state_word(health: Health) -> &'static str {
-    bar_class_and_state(health).1
+    tone_and_state(health).1
 }
 
 /// The last path segment, which is the only part of a file worth a row of its
@@ -151,10 +152,10 @@ impl Row {
         // rather than about the download. It still outranks the reading —
         // "downloaded" beside a spinner is the confusion the mark exists to
         // remove.
-        let (bar_class, state) = if clearing {
-            ("progress-info", "clearing")
+        let (tone, state) = if clearing {
+            ("wait", "clearing")
         } else {
-            bar_class_and_state(health)
+            tone_and_state(health)
         };
         // The bar's own numbers, so "230 MB of 754 MB" beside a bar at 30%
         // is the hash check's progress and not two readings of different
@@ -173,7 +174,7 @@ impl Row {
             percent,
             percent_display: percent.map(|p| format!("{p:.0}")),
             health,
-            bar_class,
+            tone,
             state,
             down: rate(d.download_speed),
             up: rate(d.upload_speed),
@@ -518,50 +519,32 @@ mod tests {
 
     #[test]
     fn state_moving() {
-        assert_eq!(
-            bar_class_and_state(Health::Moving),
-            ("progress-success", "downloading")
-        );
+        assert_eq!(tone_and_state(Health::Moving), ("ok", "downloading"));
     }
 
     #[test]
     fn state_complete() {
-        assert_eq!(
-            bar_class_and_state(Health::Complete),
-            ("progress-success", "downloaded")
-        );
+        assert_eq!(tone_and_state(Health::Complete), ("ok", "downloaded"));
     }
 
     #[test]
     fn state_choked() {
-        assert_eq!(
-            bar_class_and_state(Health::Choked),
-            ("progress-warning", "stalled")
-        );
+        assert_eq!(tone_and_state(Health::Choked), ("warn", "stalled"));
     }
 
     #[test]
     fn state_blocked() {
-        assert_eq!(
-            bar_class_and_state(Health::Blocked),
-            ("progress-error", "can't connect")
-        );
+        assert_eq!(tone_and_state(Health::Blocked), ("bad", "can't connect"));
     }
 
     #[test]
     fn state_errored() {
-        assert_eq!(
-            bar_class_and_state(Health::Errored),
-            ("progress-error", "failed")
-        );
+        assert_eq!(tone_and_state(Health::Errored), ("bad", "failed"));
     }
 
     #[test]
     fn state_dead() {
-        assert_eq!(
-            bar_class_and_state(Health::Dead),
-            ("progress-error", "no seeders")
-        );
+        assert_eq!(tone_and_state(Health::Dead), ("bad", "no seeders"));
     }
 
     /// "starting" used to answer for all three of these. Each has a different
@@ -569,17 +552,11 @@ mod tests {
     /// state is a word rather than just a colour.
     #[test]
     fn the_states_that_replaced_starting_each_say_which_one_they_are() {
+        assert_eq!(tone_and_state(Health::Resolving), ("wait", "finding peers"));
+        assert_eq!(tone_and_state(Health::Queued), ("wait", "queued"));
         assert_eq!(
-            bar_class_and_state(Health::Resolving),
-            ("progress-info", "finding peers")
-        );
-        assert_eq!(
-            bar_class_and_state(Health::Queued),
-            ("progress-info", "queued")
-        );
-        assert_eq!(
-            bar_class_and_state(Health::Verifying),
-            ("progress-info", "checking files")
+            tone_and_state(Health::Verifying),
+            ("wait", "checking files")
         );
     }
 
@@ -593,10 +570,7 @@ mod tests {
 
     #[test]
     fn state_paused() {
-        assert_eq!(
-            bar_class_and_state(Health::Paused),
-            ("progress-info", "paused")
-        );
+        assert_eq!(tone_and_state(Health::Paused), ("wait", "paused"));
     }
 
     /// Datastar v1.0.2's generic `on` plugin splits the attribute suffix on
@@ -986,7 +960,7 @@ mod tests {
             "the full name is still in the markup, just visually truncated"
         );
         assert!(
-            page.contains(r#"class="truncate text-sm font-medium""#),
+            page.contains(r#"class="truncate text-control text-strong""#),
             "the collapsed row name is not set to truncate: {page}"
         );
     }
@@ -998,9 +972,9 @@ mod tests {
         let page = render(&moving());
         // Every row is a <details> now (see the module doc on downloads.html)
         // — collapsed for a healthy one — so absence of the tag itself is no
-        // longer the signal. The error block itself, styled `text-error`
+        // longer the signal. The error block itself, styled `text-bad`
         // and nowhere else on a row, is.
-        assert!(!page.contains("text-error"));
+        assert!(!page.contains("text-bad"));
     }
 
     /// Creating a folder must not depend on the magnet field, which it has
@@ -1107,7 +1081,8 @@ mod tests {
             "the app name is still in the header: {header}"
         );
         assert!(
-            header.contains("btn-lg") && header.contains(r#"aria-label="Add download""#),
+            header.contains(r#"class="primary "#)
+                && header.contains(r#"aria-label="Add download""#),
             "the header is not a single prominent primary action: {header}"
         );
     }
@@ -1276,7 +1251,7 @@ mod tests {
         .unwrap();
         assert!(page.contains(r#"data-indicator="_adding""#));
         assert!(page.contains(r#"data-attr:disabled="$_adding""#));
-        assert!(page.contains("loading-spinner"));
+        assert!(page.contains(r#"class="spinner""#));
     }
 
     /// The whole point: a 400 the owner will actually hit (magnets only,
@@ -1415,8 +1390,8 @@ mod tests {
             download_speed: 0,
             ..moving()
         });
-        assert!(finished.contains("badge-success"));
-        assert!(!render(&moving()).contains("badge-success"));
+        assert!(finished.contains("border border-ok"));
+        assert!(!render(&moving()).contains("border border-ok"));
     }
 
     /// #372: the metadata pass reaches `Complete` when the *torrent file*
@@ -1436,7 +1411,7 @@ mod tests {
         });
         assert!(html.contains("Show.S01E01") && !html.contains("[METADATA]"));
         assert!(html.contains("finding peers"), "{html}");
-        assert!(!html.contains("badge-success") && !html.contains("progress-success"));
+        assert!(!html.contains("border border-ok") && !html.contains("ok"));
         // The indeterminate bar and the "—" beside `done` are the same
         // condition — see row.html.
         assert!(!html.contains("value=\""), "the bar claimed a percentage");
@@ -1455,10 +1430,11 @@ mod tests {
             ..moving()
         });
         assert!(finished.contains("Clear"), "{finished}");
-        assert!(!finished.contains("btn-error"));
+        assert!(!finished.contains(r#"class="bad "#));
 
         let unfinished = render(&moving());
         assert!(unfinished.contains("Cancel &#38; delete"), "{unfinished}");
+        assert!(unfinished.contains(r#"class="bad "#), "{unfinished}");
     }
 
     /// #354: every control that changes something on the server says the press
@@ -1546,13 +1522,13 @@ mod tests {
         };
         let html = render_row(&seeding, Vec::new(), true);
         assert!(html.contains("clearing"), "{html}");
-        assert!(html.contains("loading-spinner"), "{html}");
+        assert!(html.contains(r#"class="spinner""#), "{html}");
         assert!(
             !html.contains("data-on:click"),
             "a row on its way out has nothing worth pressing: {html}"
         );
         assert!(
-            !html.contains("badge-success"),
+            !html.contains("border border-ok"),
             "a row being cleared is not finished with: {html}"
         );
     }
@@ -1659,7 +1635,7 @@ mod tests {
             error_code: Some(9),
             ..moving()
         });
-        assert!(page.contains("text-error"), "no error block: {page}");
+        assert!(page.contains("text-bad"), "no error block: {page}");
         assert!(page.contains("not enough disk space"), "{page}");
     }
 

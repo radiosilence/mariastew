@@ -1,76 +1,194 @@
-/* Sources are named rather than detected: detection scans every file git does
-   not ignore, Markdown included, so a doc mentioning a class name would change
-   the stylesheet. */
+/*
+ * mariastew's stylesheet, compiled by Tailwind into assets/app.css (`just css`). The compiled file is committed: the
+ * binary embeds it, and building mariastew must not need Node.
+ *
+ * The look is kōan's (radiosilence/koan, docs/design/koan-theme.md): Geist Mono throughout, square corners, no
+ * shadows, blur or gradients, regions told apart by space or a hairline, the app's own words in lower case and what a
+ * person or a torrent wrote in its own. The tokens come from @radiosilence/theme; what is here is element defaults, the
+ * controls the templates draw, and the status tones a download row is read by.
+ *
+ * Sources are named rather than detected: detection scans every file git does not ignore, Markdown included, so a doc
+ * mentioning a class name would change the stylesheet.
+ */
 @import "tailwindcss" source(none);
 @source "../templates";
 @source "../src";
 @source "../web";
+@import "@radiosilence/theme";
 
-/* `themes: false` drops daisyUI's own light and dark, so the only palette the
-   stylesheet carries is the one below. It is what took 96KB of theme
-   definitions out of a file that only ever rendered one of them. */
-@plugin "daisyui" {
-  themes: false;
+/* The accent is the stew in icons/icon.svg: its amber on dark, 6.7:1 on --surface, and the same hue darkened to read on
+ * light, 5.1:1 on --surface. */
+:root {
+  --brand: #f59e0b;
+  /* A download that is moving or done. The theme's own mint and forest, so it is the estate's green rather than a
+   * fourth hue: 8.0:1 on dark --surface, 4.7:1 on light. */
+  --ok: #7dd3a7;
 }
 
-/* The palette is the app icon read out loud: amber is the stew, steel is the
-   magnet, and the red is its poles — so `btn-primary`, the download bars and
-   a failed download are literally the three colours in `icons/icon.svg`.
-   `base-200` is the icon's own tile, which is what lets the watermark below
-   sit on the page rather than on top of it.
+@media (prefers-color-scheme: light) {
+  :root {
+    --brand: #975800;
+    --ok: #1f7a50;
+  }
+}
 
-   The two that are not in the drawing are `success` and `info`, which have to
-   be told apart from each other and from `warning` at a glance across a
-   progress bar — that is a job for hue distance, not for brand.
+@theme inline {
+  --color-ok: var(--ok);
+}
 
-   One theme rather than a light and a dark: this is a thing you open at night
-   to start a download, `prefersdark` and `default` both point at it, and a
-   second palette is a second set of contrast decisions to keep true for a
-   preference nobody has expressed yet. */
-@plugin "daisyui/theme" {
-  name: "mariastew";
-  default: true;
-  prefersdark: true;
-  color-scheme: dark;
+@theme {
+  --animate-busy: busy 0.7s linear infinite;
+  --animate-sweep: sweep 1.4s ease-in-out infinite alternate;
 
-  --color-base-100: oklch(22.87% 0.0178 42.86);
-  --color-base-200: oklch(19.32% 0.0157 32.78);
-  --color-base-300: oklch(15.88% 0.0125 27.83);
-  --color-base-content: oklch(93.92% 0.0136 60.57);
+  @keyframes busy {
+    to {
+      transform: rotate(360deg);
+    }
+  }
 
-  --color-primary: oklch(76.86% 0.1647 70.08);
-  --color-primary-content: oklch(19.32% 0.0157 32.78);
-  --color-secondary: oklch(86.9% 0.0198 252.89);
-  --color-secondary-content: oklch(19.32% 0.0157 32.78);
-  --color-accent: oklch(83.69% 0.1644 84.43);
-  --color-accent-content: oklch(19.32% 0.0157 32.78);
-  --color-neutral: oklch(26.21% 0.0215 37.79);
-  --color-neutral-content: oklch(93.92% 0.0136 60.57);
+  @keyframes sweep {
+    from {
+      background-position:
+        0 50%,
+        0 50%;
+    }
+    to {
+      background-position:
+        100% 50%,
+        0 50%;
+    }
+  }
+}
 
-  --color-info: oklch(75.35% 0.139 232.66);
-  --color-info-content: oklch(19.32% 0.0157 32.78);
-  --color-success: oklch(80.03% 0.1821 151.71);
-  --color-success-content: oklch(19.32% 0.0157 32.78);
-  --color-warning: oklch(83.69% 0.1644 84.43);
-  --color-warning-content: oklch(19.32% 0.0157 32.78);
-  --color-error: oklch(63.68% 0.2078 25.33);
-  --color-error-content: oklch(19.32% 0.0157 32.78);
+@layer base {
+  html,
+  body {
+    @apply overflow-x-hidden;
+  }
 
-  /* Flat, and rounded only enough to notice. daisyUI's own themes make a
-     badge a pill — a full-height radius reads as a tag stuck onto the row
-     rather than part of it, and there are enough of them in a list to matter.
-     These three step up with the size of the thing instead: a badge, then a
-     button or an input, then the surfaces they sit on.
+  /* Touch screens get no hover, so a tap's highlight is the only sign it landed. Preflight removes it. */
+  html {
+    -webkit-tap-highlight-color: revert;
+  }
 
-     `depth` and `noise` are what daisyUI 5 adds on top of a flat theme — a
-     gradient overlay and a texture on every surface — and both are off, so a
-     button is its fill and its border and nothing else. */
-  --radius-selector: 0.375rem;
-  --radius-field: 0.5rem;
-  --radius-box: 0.75rem;
-  --border: 1px;
-  --depth: 0;
-  --noise: 0;
+  body {
+    @apply min-h-dvh bg-bg text-control text-ink;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand;
+  }
+
+  /* Bordered: a button's weight unless the template says otherwise. Square, as every control in the theme is; the
+   * outline is `muted` because `rule` is too faint to show where a control is. */
+  button {
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 border border-muted bg-transparent px-3 py-1.5 text-meta text-ink lowercase select-none hover:bg-hover/30 active:bg-hover disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent;
+  }
+
+  input {
+    @apply min-w-0 border border-muted bg-transparent px-2.5 py-2 text-input text-ink focus:outline-2 focus:-outline-offset-2 focus:outline-brand;
+  }
+
+  ::placeholder {
+    @apply text-muted lowercase opacity-100;
+  }
+
+  dialog {
+    @apply text-ink;
+  }
+
+  dialog::backdrop {
+    @apply bg-bg/80;
+  }
+}
+
+@layer components {
+  /* The weights beside the bordered default: prominent is what the page is for, and a page has at most one; quiet is a
+   * text button; bad is destructive. */
+  .primary {
+    @apply border-brand text-body text-brand;
+  }
+
+  .quiet {
+    @apply border-transparent text-muted hover:bg-transparent hover:text-ink;
+  }
+
+  .bad {
+    @apply border-bad text-bad;
+  }
+
+  /* A row of a list that is itself the button: a directory in the picker. Its label is a name on disk, so it keeps
+   * its case. */
+  .entry {
+    @apply block w-full border-0 px-3 py-2 text-left text-control normal-case break-words;
+  }
+
+  /* In flight, for as long as the request a `data-indicator` counts. Square, as the theme's controls are. */
+  .spinner {
+    @apply inline-block size-[0.9em] shrink-0 animate-busy border-2 border-current/30 border-t-current motion-reduce:animate-none;
+  }
+
+  /* Stands in for a listing on its way. A flat fill that breathes, rather than daisyUI's moving gradient. */
+  .skeleton {
+    @apply animate-pulse bg-hover/30 motion-reduce:animate-none;
+  }
+
+  /* The theme's progress bar: a hairline, the part done thicker in the row's tone. Without a value, before there is
+   * anything to count, a short length of the tone moves along it; under reduced motion it is the thicker track.
+   *
+   * The tone is a status, not decoration, so it is the one place here colour carries meaning: green is moving or
+   * done, `warn` is stalled, `bad` is failing, and `muted` is waiting on something that is not the swarm. The word
+   * beside every bar says the same, so the colour is never the only way to read a row. */
+  progress.meter {
+    --tone: var(--ink);
+    @apply block h-[3px] w-full appearance-none border-0 bg-transparent;
+    background: linear-gradient(var(--rule), var(--rule)) 0 50% / 100% 1px no-repeat;
+  }
+
+  progress.meter.ok {
+    --tone: var(--ok);
+  }
+
+  progress.meter.warn {
+    --tone: var(--warn);
+  }
+
+  progress.meter.bad {
+    --tone: var(--bad);
+  }
+
+  progress.meter.wait {
+    --tone: var(--muted);
+  }
+
+  progress.meter::-webkit-progress-bar {
+    @apply bg-transparent;
+  }
+
+  progress.meter::-webkit-progress-value {
+    background: var(--tone);
+  }
+
+  progress.meter::-moz-progress-bar {
+    background: var(--tone);
+  }
+
+  progress.meter:indeterminate {
+    @apply animate-sweep;
+    background:
+      linear-gradient(var(--tone), var(--tone)) 0 50% / 25% 3px no-repeat,
+      linear-gradient(var(--rule), var(--rule)) 0 50% / 100% 1px no-repeat;
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+      background: linear-gradient(var(--rule), var(--rule)) 0 50% / 100% 3px no-repeat;
+    }
+  }
+
+  progress.meter:indeterminate::-moz-progress-bar {
+    @apply bg-transparent;
+  }
 }
 
 /* The icon, once, very faint, behind everything.
@@ -83,22 +201,22 @@
    the outline is the part that does not move.
 
    A `background-image` on `body` rather than a fixed pseudo-element: the
-   colour under it is already `bg-base-200` on the same element, so the two
-   layer without a stacking context, and no rule has to be written to keep the
+   colour under it is already `bg-bg` on the same element, so the two layer
+   without a stacking context, and no rule has to be written to keep the
    header and the list above it. `fixed` so it stays put while the list
    scrolls — a watermark that scrolls is a texture.
 
-   The rows on top of it are opaque, so with a full list this is a background
-   in the literal sense: seen around and between the cards, and most of it not
-   seen at all. Where it does the work is everything that is not a full list —
-   the empty state, the sign-in page, a short queue, the space under the last
-   row. That is what the opacity is set against; loud enough to read across
-   open space is already too loud for the gaps between rows.
+   Where it does the work is everything that is not a full list — the empty
+   state, the sign-in page, a short queue, the space under the last row. That
+   is what the opacity is set against.
 
    The poles are cut away from the legs by a gap rather than sitting on them
    as they do in the icon. One flat colour merges the two into a plain U and
    loses the ends entirely, which are the part that says magnet; a gap says
    the same thing the colour change says, using the only ink this has.
+
+   The fill is the dark accent in both schemes: a data URL cannot read a
+   custom property, and at this opacity the two would be indistinguishable.
 
    `opacity` on the group and not `fill-opacity` on each shape, so the three
    are composited before they are faded — otherwise anywhere two of them meet
@@ -117,16 +235,15 @@
    templates/icons.html onto one class — what differs between icons is the
    path, and repeating six attributes per glyph would bury it. Sized in `em`
    so an icon is always the size of the text it sits beside, and nudged off
-   the baseline so it centres on it: these replaced unicode glyphs sitting
-   inline in a sentence, and an icon that sat a little high or a little large
-   would read as worse than the character it replaced. In `components` so a
-   utility class passed to a macro still wins. */
+   the baseline so it centres on it. In `components` so a utility class passed
+   to a macro still wins. */
 @layer components {
   .icon {
     display: inline-block;
     width: 1em;
     height: 1em;
     vertical-align: -0.125em;
+    flex: none;
     fill: none;
     stroke: currentColor;
     stroke-width: 2;
@@ -137,17 +254,13 @@
 
 /* `<summary>`'s marker is the one glyph on this page no stylesheet ever
    chose: the user agent supplies it, so it is a filled triangle in Chrome, a
-   smaller outlined one in Safari, and a different size again in Firefox —
-   the same "whatever the device decides it is" problem the unicode icons had,
-   arriving through a different door. `.disclosure` takes it off (both the
-   standard property and WebKit's separate pseudo-element, which `list-style`
-   alone does not reach) and the chevron inside turns instead. A `display:
-   flex` summary drops the marker on its own, so these two rules are the
-   belt to that brace — what the class is really for is the rotation below,
-   which nothing else supplies.
+   smaller outlined one in Safari, and a different size again in Firefox.
+   `.disclosure` takes it off (both the standard property and WebKit's
+   separate pseudo-element, which `list-style` alone does not reach) and the
+   chevron inside turns instead.
 
    The rotation is on the icon rather than a `[open]` variant per call site,
-   so a disclosure added later gets it by writing the same two class names. */
+   so a disclosure added later gets it by writing the same class names. */
 @layer components {
   .disclosure > summary {
     list-style: none;
@@ -165,9 +278,6 @@
     transform: rotate(90deg);
   }
 
-  /* Someone who has asked for less motion has asked for this too — it is
-     decoration on a state change that the chevron's final position already
-     communicates. */
   @media (prefers-reduced-motion: reduce) {
     .disclosure-chevron {
       transition: none;
@@ -184,18 +294,18 @@
 
 /* Where the bottom sheet is, stated rather than nudged.
    `dialog:modal` arrives from the user agent as `width: fit-content`,
-   `margin: auto` and `max-width: calc(100% - 6px - 2em)`, so the margin
-   utilities that used to sit here asked for the full width, got 38px less
-   than it, and — with the margin pinned to zero on one side — put the whole
-   shortfall on the other: the sheet in the corner of #353. An author rule
-   beats the user agent's whatever its specificity, so saying the insets once
-   leaves nothing for the two to disagree about.
+   `margin: auto` and `max-width: calc(100% - 6px - 2em)`, so margin
+   utilities asked for the full width, got 38px less than it, and — with the
+   margin pinned to zero on one side — put the whole shortfall on the other:
+   the sheet in the corner of #353. An author rule beats the user agent's
+   whatever its specificity, so saying the insets once leaves nothing for the
+   two to disagree about.
 
    `--keyboard-inset` is the part a fixed element cannot work out for itself.
    iOS Safari answers a keyboard by shrinking the visual viewport and leaving
    the layout viewport alone, and fixed positioning is resolved against the
    layout one — so `bottom: 0` was the bottom of a box the keyboard was
-   covering, and the sheet opened underneath it. `assets/app.js` measures the
+   covering, and the sheet opened underneath it. `web/ms.ts` measures the
    difference; every browser that resizes for its own keyboard measures zero,
    which is also the fallback, so this is a no-op there rather than a second
    correction stacked on theirs.
@@ -205,7 +315,11 @@
    when it has no reason to. What is left above the keyboard is a fact, and
    subtracting the keyboard from the preference charges for it twice: on a
    660px viewport with 350px of keyboard that left 211px for a sheet with
-   294px of room to sit in. */
+   294px of room to sit in.
+
+   A hairline along its top edge on a phone and all the way round once it is
+   a centred dialog: with no shadow, the line is what separates it from the
+   dimmed page. */
 @layer components {
   .sheet {
     position: fixed;
@@ -216,6 +330,8 @@
     margin: 0;
     padding: 0;
     border: 0;
+    border-top: 1px solid var(--rule);
+    background: var(--bg);
   }
 
   /* Wide enough for a pointer: back to a centred dialog, where the keyboard
@@ -224,9 +340,10 @@
     .sheet {
       inset: 0;
       width: 100%;
-      max-width: var(--container-sm);
+      max-width: var(--container-panel);
       max-height: 85dvh;
       margin: auto;
+      border: 1px solid var(--rule);
     }
   }
 }

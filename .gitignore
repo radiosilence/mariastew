@@ -15,3 +15,6 @@ dev-data/
 # Deliberately not ignored, though it is built: `assets/app-<hash>.js` is what
 # `include_bytes!` reads at compile time and `build.rs` names, so a checkout
 # without it does not compile. Same standing as `assets/app.css`.
+
+# Written by `just auth`; holds a GitHub Packages token.
+/.npmrc.auth
