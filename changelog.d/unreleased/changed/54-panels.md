@@ -1,0 +1,1 @@
+- **Lighter panels.** Panels are the kit's lighter ground rather than hairline boxes.
