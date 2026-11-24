@@ -1004,7 +1004,7 @@ mod tests {
         );
         assert!(
             page.contains(
-                r#"name="name" placeholder="New folder name" enterkeyhint="done" form="mkdir-form""#
+                r#"name="name" placeholder="new folder name" enterkeyhint="done" form="mkdir-form""#
             ),
             "the folder name field still belongs to the add form: {page}"
         );
@@ -1149,7 +1149,7 @@ mod tests {
         }
         .render()
         .unwrap();
-        assert!(browse.contains("No destinations are configured"));
+        assert!(browse.contains("no destinations are configured"));
     }
 
     /// The listing left on screen during a browse belongs to the folder being
@@ -1633,7 +1633,7 @@ mod tests {
             error_code: Some(9),
             ..moving()
         });
-        assert!(page.contains("text-bad"), "no error block: {page}");
+        assert!(page.contains("notice bad"), "no error block: {page}");
         assert!(page.contains("not enough disk space"), "{page}");
     }
 
@@ -1650,7 +1650,7 @@ mod tests {
         });
         assert!(page.contains("aria2 code 9 — not enough disk space"));
         assert!(
-            !page.contains("<p></p>"),
+            !page.contains(r#"<p class="my-0"></p>"#),
             "an empty message rendered: {page}"
         );
     }
