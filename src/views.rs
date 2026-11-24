@@ -693,7 +693,7 @@ mod tests {
         .render()
         .unwrap();
         assert!(
-            with_banner.contains("alert-warning"),
+            with_banner.contains(r#"role="alert""#),
             "no banner when aria2 is unreachable: {with_banner}"
         );
 
@@ -705,7 +705,7 @@ mod tests {
         .render()
         .unwrap();
         assert!(
-            !without_banner.contains("alert-warning"),
+            !without_banner.contains(r#"role="alert""#),
             "banner shown when aria2 is fine: {without_banner}"
         );
     }
