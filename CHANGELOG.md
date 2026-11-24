@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+### Changed
+
+- **The shared kōan look.** The web UI moves from its own daisyUI palette to `@radiosilence/theme`: Geist Mono, square corners, hairlines, lowercase labels and a light palette that follows the system setting. The stew's amber stays as the accent, and download bars keep distinct tones for moving, stalled, failing and waiting.
+
 ## 0.3.5
 
 ### Changed
