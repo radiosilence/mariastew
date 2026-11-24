@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1
+
+### Fixed
+
+- Fill the primary buttons
+
 ## 0.6.0
 
 ### Changed
