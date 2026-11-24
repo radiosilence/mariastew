@@ -179,51 +179,50 @@ own before it has parsed any `<link>`.
 
 ## The theme
 
-One daisyUI theme, `mariastew`, defined in `styles/app.css`; daisyUI's own are
-switched off (`themes: false`), so the stylesheet carries the one palette it
-renders. It is the app icon read out loud — amber is the stew, steel is the
-magnet, red is its poles — so `btn-primary`, a download bar and a failed
-download are literally the three colours in `icons/icon.svg`, and `base-200` is
-the icon's own tile. `success` and `info` are the two that are not in the
-drawing: they have to be told apart from each other and from `warning` at a
-glance across a progress bar, which is a job for hue distance rather than for
-brand.
+The look is the one radiosilence's other web pages share: tokens from
+`@radiosilence/theme` ([radiosilence/theme](https://github.com/radiosilence/theme)),
+drawn by the rules in kōan's
+[`docs/design/koan-theme.md`](https://github.com/radiosilence/koan/blob/main/docs/design/koan-theme.md).
+Geist Mono throughout, square corners, no shadows, blur or gradients, regions
+separated by space or a hairline, and the app's own words in lower case. What
+the app did not write keeps its case: torrent and file names, directory names,
+aria2's error messages.
 
-It is dark only. This is a thing you open at night to start a download, and a
-second palette is a second set of contrast decisions to keep true for a
-preference nobody has expressed yet.
+The theme gives a dark and a light palette and follows the reader's system
+setting. The accent, `--brand`, is overridden after the import with the stew's
+amber from `icons/icon.svg`, darkened on light to stay legible; both values and
+their contrast against `--surface` are stated where they are set in
+`styles/app.css`.
 
-Flat, and rounded only enough to notice — `--depth` and `--noise`, the gradient
-overlay and surface texture daisyUI 5 adds over a flat theme, are both off, and
-the radii step up with the size of the thing rather than making a badge a pill.
-That is also why the header carries a border instead of the shadow it used to:
-on a dark surface a small drop shadow draws a separation the eye cannot see.
+A download bar is the one place colour carries a status, so it keeps tones the
+accent cannot stand in for: green (`--ok`, the theme's own mint and forest) for
+moving or done, the theme's `--warn` for stalled, `--bad` for failing, and
+`--muted` for waiting on something other than the swarm. `views::tone_and_state`
+pairs each tone with the word shown beside the bar, so colour is never the only
+way to read a row.
 
 The page background is the icon's silhouette, once, very faint, `fixed` so it
 does not scroll. It is the silhouette and not the icon because flattening the
 drawing to one colour fills the gap between the poles and the U stops reading;
 for the same reason the poles are cut away from the legs by a gap rather than
-sitting on them, since a gap says what the colour change said using the only
-ink one flat colour has.
-With a full list it is a background in the literal sense — the rows on top of
-it are opaque, so it is seen around and between them and mostly not seen at
-all. Where it does the work is everything that is not a full list: the empty
-state, the sign-in page, a short queue, the space under the last row.
+sitting on them. The rows on top of it are opaque, so it shows in the empty
+state, the sign-in page, a short queue and the space under the last row.
 
 ## Rebuilding the stylesheet
 
-The stylesheet is generated with Tailwind + DaisyUI but the *output*
-(`assets/app.css`) is committed, so `cargo build` needs no Node toolchain —
-only editing a template does:
+The output (`assets/app.css`) and the typeface beside it
+(`assets/geist-mono.woff2`) are committed, so `cargo build` needs no Node
+toolchain; only editing a template or `styles/app.css` does:
 
 ```sh
-mise run css
+just css
 ```
 
-This runs `tailwindcss` from `node_modules/.bin` (this repo's own
-devDependencies — `package.json` declares `mariastew-assets`,
-separate from the Rust crate) against `styles/app.css`, minified, into
-`assets/app.css`.
+This installs the Node packages, writes a GitHub Packages token to
+`.npmrc.auth` first if there is none (`@radiosilence/theme` is published there,
+and reading it needs one: `GH_TOKEN`, or the `gh` login), compiles
+`styles/app.css` into `assets/app.css` and copies the theme's typeface beside
+it, where the stylesheet's relative font URL points. The server embeds both.
 
 ## Rebuilding the browser script
 

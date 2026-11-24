@@ -10,9 +10,9 @@
      container when aria2 stops answering, and the list again on the first
      tick after it answers. #}
 {% import "icons.html" as icons %}
-<div id="downloads" class="flex flex-col gap-2 p-4">
+<div id="downloads" class="flex flex-col p-4">
 {% if aria2_unreachable %}
-<div role="alert" class="alert alert-warning">
+<div role="alert" class="flex items-start gap-2 border-l-2 border-warn py-1 pl-3 text-warn">
   {% call icons::triangle_alert() %}{% endcall %}
   <span>The download service is unreachable — the list will fill in when it answers.</span>
 </div>
@@ -21,10 +21,10 @@
      button, and no way to tell "you have no downloads" from "the list failed
      to render". Said outright, with the one thing to do about it — the same
      treatment the picker's empty folder already gets. #}
-<div class="rounded-box border border-base-300 bg-base-100 p-8 text-center">
-  {% call icons::inbox(class="text-4xl opacity-30") %}{% endcall %}
-  <p class="mt-3 text-sm font-medium">Nothing downloading</p>
-  <p class="mt-1 text-xs opacity-60">Paste a magnet link into the Add button above to start one.</p>
+<div class="py-12 text-center">
+  {% call icons::inbox(class="text-4xl text-muted") %}{% endcall %}
+  <p class="mt-3 text-strong lowercase">Nothing downloading</p>
+  <p class="mt-1 text-meta text-muted">Paste a magnet link into the Add button above to start one.</p>
 </div>
 {% else %}
 {% for row in rows %}

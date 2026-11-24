@@ -10,39 +10,39 @@
 {% import "icons.html" as icons %}
 {% import "ui.html" as ui %}
   <details id="dl-{{ row.gid }}" data-preserve-attr="open"
-    class="rounded-box border border-base-300 bg-base-100">
-    <summary class="flex min-h-14 cursor-pointer items-center gap-3 p-3">
+    class="border-b border-rule">
+    <summary class="flex min-h-14 cursor-pointer items-center gap-3 py-3">
       <div class="min-w-0 flex-1">
         <div class="flex items-baseline justify-between gap-2">
-          <span class="truncate text-sm font-medium">{{ row.name }}</span>
+          <span class="truncate text-control text-strong">{{ row.name }}</span>
           {# Only a finished download is worth interrupting a scan of the list
                for, so it alone gets a badge; the moving bar already says
                "downloading". #}
           {% if row.finished && !row.clearing %}
-          <span class="badge badge-sm badge-success shrink-0">{% call icons::check() %}{% endcall %} {{ row.state }}</span>
+          <span class="inline-flex shrink-0 items-center gap-1 border border-ok px-1.5 text-fine text-ok">{% call icons::check() %}{% endcall %} {{ row.state }}</span>
           {% else %}
-          <span class="shrink-0 text-xs opacity-60">{{ row.state }}</span>
+          <span class="shrink-0 text-fine text-muted">{{ row.state }}</span>
           {% endif %}
         </div>
         {# No value until the size is known, which a `<progress>` draws as
              indeterminate. #}
-        <progress class="progress {{ row.bar_class }} mt-1.5 h-1.5 w-full"
+        <progress class="meter {{ row.tone }} mt-2"
           {%- if let Some(percent) = row.percent_display %} value="{{ percent }}" max="100"{% endif %}></progress>
         {# The destination wraps rather than truncating: its tail is what says
              which folder the download landed in. `min-w-0` lets it shrink
              beside the rate. The rate and time left are absent when nothing
              is moving; `eta` is never set without `down`. #}
-        <div class="mt-1 flex items-baseline justify-between gap-2 text-xs">
-          <p class="min-w-0 break-words opacity-60">{% call icons::folder() %}{% endcall %} {{ row.dir }}</p>
+        <div class="mt-1.5 flex items-baseline justify-between gap-2 text-fine">
+          <p class="min-w-0 break-words text-muted">{% call icons::folder() %}{% endcall %} {{ row.dir }}</p>
           {% if let Some(down) = row.down %}
-          <span class="shrink-0 font-medium tabular-nums" aria-label="download rate">{% call icons::arrow_down() %}{% endcall %} {{ down }}{% if let Some(eta) = row.eta %} · {{ eta }} left{% endif %}</span>
+          <span class="shrink-0 tabular-nums" aria-label="download rate">{% call icons::arrow_down() %}{% endcall %} {{ down }}{% if let Some(eta) = row.eta %} · {{ eta }} left{% endif %}</span>
           {% endif %}
         </div>
       </div>
     </summary>
 
-    <div class="flex flex-col gap-3 border-t border-base-300 p-3">
-      <dl class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+    <div class="flex flex-col gap-3 pb-4">
+      <dl class="grid grid-cols-2 gap-x-4 gap-y-1 text-fine">
         {# Until the magnet resolves there is no size, and "0 B / 0 B" would
              read as a finished download of nothing. #}
         {% call ui::reading("done") %}{% if row.percent.is_some() %}{{ row.done }} / {{ row.size }}{% else %}—{% endif %}{% endcall %}
@@ -56,7 +56,7 @@
       </dl>
 
       {% if row.pieces.is_some() || row.info_hash.is_some() %}
-      <div class="font-mono text-xs break-all opacity-50">
+      <div class="text-fine break-all text-muted">
         {% if let Some(pieces) = row.pieces %}<p>{{ pieces }}</p>{% endif %}
         {% if let Some(hash) = row.info_hash %}<p>{{ hash }}</p>{% endif %}
       </div>
@@ -64,46 +64,46 @@
 
       {# Which files are kept and which the garbage filter refused. #}
       {% if !row.files.is_empty() %}
-      <details id="files-{{ row.gid }}" data-preserve-attr="open" class="disclosure rounded-box bg-base-200">
-        <summary class="flex cursor-pointer items-center gap-2 p-2.5 text-xs">
+      <details id="files-{{ row.gid }}" data-preserve-attr="open" class="disclosure bg-surface">
+        <summary class="flex cursor-pointer items-center gap-2 p-2.5 text-fine lowercase">
           {% call icons::chevron_right() %}{% endcall %}
           {% call icons::files() %}{% endcall %}
-          Files <span class="opacity-60">— keeping {{ row.selected_count }} of {{ row.file_count }}{% if let Some(skipped) = row.skipped %}, {{ skipped }}{% endif %}</span>
+          Files <span class="text-muted">— keeping {{ row.selected_count }} of {{ row.file_count }}{% if let Some(skipped) = row.skipped %}, {{ skipped }}{% endif %}</span>
         </summary>
-        <ul class="flex flex-col gap-2 border-t border-base-300 p-2">
+        <ul class="flex flex-col gap-2 border-t border-rule p-2">
         {% for file in row.files %}
           <li class="{% if !file.selected %}opacity-40{% endif %}">
-            <div class="flex items-baseline justify-between gap-2 text-xs">
+            <div class="flex items-baseline justify-between gap-2 text-fine">
               <span class="break-words">{{ file.name }}</span>
-              <span class="shrink-0 opacity-60">{% if file.selected %}{{ file.size }}{% else %}skipped{% endif %}</span>
+              <span class="shrink-0 text-muted">{% if file.selected %}{{ file.size }}{% else %}skipped{% endif %}</span>
             </div>
             {% if let Some(percent) = file.percent_display %}
-            <progress class="progress mt-1 h-1 w-full" value="{{ percent }}" max="100"></progress>
+            <progress class="meter mt-1" value="{{ percent }}" max="100"></progress>
             {% endif %}
           </li>
         {% endfor %}
         </ul>
         {% if row.file_count > row.files.len() %}
-        <p class="px-2 pb-2 text-xs opacity-60">…and {{ row.file_count - row.files.len() }} more</p>
+        <p class="px-2 pb-2 text-fine text-muted">…and {{ row.file_count - row.files.len() }} more</p>
         {% endif %}
       </details>
       {% endif %}
 
       {# What happened while adding it, which aria2 has no record of. #}
       {% if !row.log.is_empty() %}
-      <details id="log-{{ row.gid }}" data-preserve-attr="open" class="disclosure rounded-box bg-base-200">
-        <summary class="flex cursor-pointer items-center gap-2 p-2.5 text-xs">
+      <details id="log-{{ row.gid }}" data-preserve-attr="open" class="disclosure bg-surface">
+        <summary class="flex cursor-pointer items-center gap-2 p-2.5 text-fine lowercase">
           {% call icons::chevron_right() %}{% endcall %}
           {% call icons::scroll_text() %}{% endcall %}
-          Logs <span class="opacity-60">— {{ row.log.len() }} entries</span>
+          Logs <span class="text-muted">— {{ row.log.len() }} entries</span>
         </summary>
         {# The markup carries UTC and `data-text` rewrites it in the browser's
              timezone; `hour12: false` keeps the column a fixed width. Only an
              integer is interpolated into the expression — see `LogView`. #}
-        <ol class="flex flex-col gap-1 border-t border-base-300 p-2 font-mono text-xs">
+        <ol class="flex flex-col gap-1 border-t border-rule p-2 text-fine">
         {% for entry in row.log %}
           <li class="flex gap-2">
-            <span class="w-16 shrink-0 text-right tabular-nums opacity-50"
+            <span class="w-16 shrink-0 text-right tabular-nums text-muted"
               data-text="new Date({{ entry.at_ms }}).toLocaleTimeString([], {hour12: false})">{{ entry.utc }}</span>
             <span class="break-words">{{ entry.message }}</span>
           </li>
@@ -116,9 +116,9 @@
            survive a phone screen in daylight. aria2 often leaves the message
            empty, so the translated code is as often as not the reason. #}
       {% if row.error.is_some() || row.error_code.is_some() %}
-      <div class="flex gap-2 rounded-box bg-base-200 p-2 text-xs text-error">
+      <div class="flex gap-2 border-l-2 border-bad py-1 pl-3 text-fine text-bad">
         {% call icons::triangle_alert() %}{% endcall %}
-        <div class="min-w-0 flex-1 font-mono break-words">
+        <div class="min-w-0 flex-1 break-words">
         {% if let Some(e) = row.error %}<p>{{ e }}</p>{% endif %}
         {% if let Some(code) = row.error_code %}<p>{{ code }}</p>{% endif %}
         <p class="mt-1 opacity-70">gid {{ row.gid }}</p>
@@ -136,8 +136,8 @@
            data, so it says both halves. #}
       <div class="flex gap-2">
         {% if row.clearing %}
-        <button type="button" class="btn btn-sm min-h-11 flex-1" disabled>
-          <span class="loading loading-spinner loading-xs"></span>Clearing…
+        <button type="button" class="min-h-11 flex-1" disabled>
+          <span class="spinner"></span>Clearing…
         </button>
         {% else %}
         {% if row.paused %}
@@ -146,9 +146,9 @@
         {% call ui::action(row.gid, "pause", "pausing", "Pause") %}{% call icons::pause() %}{% endcall %}{% endcall %}
         {% endif %}
         {% if row.finished %}
-        {% call ui::action(row.gid, "remove", "removing", "Clear", "btn-success") %}{% call icons::check() %}{% endcall %}{% endcall %}
+        {% call ui::action(row.gid, "remove", "removing", "Clear", "border-ok text-ok") %}{% call icons::check() %}{% endcall %}{% endcall %}
         {% else %}
-        {% call ui::action(row.gid, "remove", "removing", "Cancel & delete", "btn-error") %}{% call icons::trash() %}{% endcall %}{% endcall %}
+        {% call ui::action(row.gid, "remove", "removing", "Cancel & delete", "bad") %}{% call icons::trash() %}{% endcall %}{% endcall %}
         {% endif %}
         {% endif %}
       </div>

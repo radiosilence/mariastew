@@ -111,7 +111,7 @@ async fn security_headers(
 /// browser asks for on its own, before it has parsed any `<link>` — and the
 /// only router that would otherwise answer it is behind the session layer, so
 /// an unauthenticated tab would get a login redirect where it wanted an image.
-const ASSETS: [(&str, &str, &[u8]); 11] = [
+const ASSETS: [(&str, &str, &[u8]); 12] = [
     (
         APP_JS_PATH,
         "text/javascript; charset=utf-8",
@@ -121,6 +121,13 @@ const ASSETS: [(&str, &str, &[u8]); 11] = [
         "/assets/app.css",
         "text/css; charset=utf-8",
         include_bytes!("../assets/app.css"),
+    ),
+    // Beside the stylesheet because @radiosilence/theme names it by a relative
+    // URL; `just css` copies it out of the package.
+    (
+        "/assets/geist-mono.woff2",
+        "font/woff2",
+        include_bytes!("../assets/geist-mono.woff2"),
     ),
     (
         "/assets/manifest.webmanifest",

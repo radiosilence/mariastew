@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "devDependencies": {
+    "@radiosilence/theme": "0.1.0",
     "@tailwindcss/cli": "4.3.3",
-    "daisyui": "5.7.50",
     "lucide-static": "1.66.0",
     "oxfmt": "0.75.0",
     "oxlint": "1.90.0",
