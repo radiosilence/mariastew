@@ -8,7 +8,7 @@ for.
 ## When there is nothing to show
 
 `#downloads` is three things, not one, and which of them it is says something
-different. Rows, when there are rows. "Nothing downloading", with the one thing
+different. Rows, when there are rows. "nothing downloading", with the one thing
 to do about it, when the queue is genuinely empty — an empty container and a
 list that failed to render looked identical, and the difference is the whole
 question someone is asking when they open the page and see nothing. And a

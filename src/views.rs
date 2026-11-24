@@ -53,7 +53,7 @@ pub struct Row {
     pub percent_display: Option<String>,
     #[allow(dead_code)]
     pub health: Health,
-    /// The bar's tone (`progress.meter` in styles/app.css) — the fast way to
+    /// The bar's tone (the kit's `progress.meter` tones in @radiosilence/theme) — the fast way to
     /// read a row at arm's length. The icons carry the same meaning for a
     /// washed-out screen.
     pub tone: &'static str,
@@ -1041,9 +1041,10 @@ mod tests {
         }
         .render()
         .unwrap();
-        // The dialog's own cap is `.sheet` in styles/app.css rather than a
-        // utility here — see #353 — so the class is all a rendered template
-        // can be asked about. What it opts into is not visible from Rust.
+        // The dialog's own cap is the kit's `.sheet` (@radiosilence/theme)
+        // rather than a utility here — see #353 — so the class is all a
+        // rendered template can be asked about. What it opts into is not
+        // visible from Rust.
         assert!(
             page.contains(r#"class="sheet "#),
             "dialog does not use the sheet geometry, so it has no height cap: {page}"

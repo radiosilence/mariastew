@@ -205,10 +205,11 @@ their contrast against `--surface` are stated where they are set in
 `styles/app.css`.
 
 A download bar is the one place colour carries a status, so it is drawn in the
-kit's status tones rather than the accent: `--ok` for moving or done, the theme's `--warn` for stalled, `--bad` for failing, and
-`--muted` for waiting on something other than the swarm. `views::tone_and_state`
-pairs each tone with the word shown beside the bar, so colour is never the only
-way to read a row.
+kit's status tones rather than the accent: `--ok` for moving or done, `--warn`
+for stalled, `--bad` for failing, and `--muted` for waiting on something other
+than the swarm. A row's per-file bars take the same tone as its own.
+`views::tone_and_state` pairs each tone with the word shown beside the bar, so
+colour is never the only way to read a row.
 
 The page background is the icon's silhouette, once, very faint, `fixed` so it
 does not scroll. It is the silhouette and not the icon because flattening the
