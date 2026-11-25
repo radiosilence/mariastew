@@ -1,6 +1,6 @@
 # mariastew
 
-# Install the Node packages, the shared theme (@radiosilence/theme) among them, writing the registry token first if
+# Install the Node packages, the shared theme (@radiosilence/koan-kit-web) among them, writing the registry token first if
 # missing.
 theme:
     @test -s .npmrc.auth || just auth
@@ -19,9 +19,9 @@ auth:
 # where the stylesheet's relative font URL points. Both outputs are committed because the server embeds them; CI fails a
 # build where either is stale, or where a template or the Rust that writes markup uses a class outside the kit.
 css: theme
-    node node_modules/@radiosilence/theme/kit-check.mjs templates src web
+    node node_modules/@radiosilence/koan-kit-web/kit-check.mjs templates src web
     ./node_modules/.bin/tailwindcss --input styles/app.css --output assets/app.css --minify
-    cp node_modules/@radiosilence/theme/geist-mono.woff2 assets/geist-mono.woff2
+    cp node_modules/@radiosilence/koan-kit-web/geist-mono.woff2 assets/geist-mono.woff2
 
 # Write CHANGELOG.md from the fragments in changelog.d/. `--stdout` prints it instead.
 changelog *args:

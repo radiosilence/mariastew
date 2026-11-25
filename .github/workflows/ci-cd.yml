@@ -233,7 +233,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      # @radiosilence/theme is on GitHub Packages, which wants a token even to read.
+      # @radiosilence/koan-kit-web is on GitHub Packages, which wants a token even to read.
       packages: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
