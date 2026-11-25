@@ -2,7 +2,7 @@
  * mariastew's stylesheet, compiled by Tailwind into assets/app.css (`just css`). The compiled file is committed: the
  * binary embeds it, and building mariastew must not need Node.
  *
- * The look is kōan's (radiosilence/koan, docs/design/koan-theme.md), and @radiosilence/theme draws it: the tokens, the
+ * The look is kōan's (radiosilence/koan, docs/design/koan-theme.md), and @radiosilence/koan-kit-web draws it: the tokens, the
  * element defaults and the kit of controls (button weights, notice, status, meter, spinner, skeleton, disclosure,
  * sheet). What is here is only what is particular to mariastew: its accent, the watermark, the icon class and the
  * picker's directory entry.
@@ -14,7 +14,7 @@
 @source "../templates";
 @source "../src";
 @source "../web";
-@import "@radiosilence/theme";
+@import "@radiosilence/koan-kit-web";
 
 /* The accent is the stew in icons/icon.svg: its amber on dark, 6.7:1 on --surface, and the same hue darkened to read on
  * light, 5.1:1 on --surface. */

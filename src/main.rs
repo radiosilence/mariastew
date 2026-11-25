@@ -122,7 +122,7 @@ const ASSETS: [(&str, &str, &[u8]); 12] = [
         "text/css; charset=utf-8",
         include_bytes!("../assets/app.css"),
     ),
-    // Beside the stylesheet because @radiosilence/theme names it by a relative
+    // Beside the stylesheet because @radiosilence/koan-kit-web names it by a relative
     // URL; `just css` copies it out of the package.
     (
         "/assets/geist-mono.woff2",

@@ -179,7 +179,7 @@ own before it has parsed any `<link>`.
 ## The theme
 
 The look is the one radiosilence's other web pages share, and the kōan web kit
-in `@radiosilence/theme` ([radiosilence/theme](https://github.com/radiosilence/theme))
+in `@radiosilence/koan-kit-web` ([koan-kit-web](https://github.com/radiosilence/koan/tree/main/koan-kit-web))
 draws it: the tokens, the element defaults, and the controls the templates use
 (the button weights, `notice`, `status`, `meter`, `spinner`, `skeleton`,
 `disclosure` and `sheet`). The rules behind it are kōan's
@@ -229,7 +229,7 @@ just css
 ```
 
 This installs the Node packages, runs `kit-check`, writes a GitHub Packages token to
-`.npmrc.auth` first if there is none (`@radiosilence/theme` is published there,
+`.npmrc.auth` first if there is none (`@radiosilence/koan-kit-web` is published there,
 and reading it needs one: `GH_TOKEN`, or the `gh` login), compiles
 `styles/app.css` into `assets/app.css` and copies the theme's typeface beside
 it, where the stylesheet's relative font URL points. The server embeds both.
