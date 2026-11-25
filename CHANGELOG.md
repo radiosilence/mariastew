@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0
+
+### Changed
+
+- **Filled primary from the kit.** The primary action's fill comes from the kit.
+
 ## 0.6.1
 
 ### Fixed
