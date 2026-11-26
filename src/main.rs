@@ -19,31 +19,22 @@ mod routes;
 mod state;
 mod views;
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 #[cfg(test)]
 use std::{fs, path::Path};
 
+use askama_datastar::{Asset, Csp, SecurityHeaders};
 use axum::Router;
-use axum::http::{StatusCode, header};
-use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
 use crate::config::Config;
 use crate::state::AppState;
 
-/// `build.rs` finds the one `assets/app-<hash>.js` rolldown wrote and hands
-/// its name over as an env var — the hash is how a deploy's new script stops
-/// being served from a browser cache still holding the old one, and it is not
-/// something the source can spell on its own since rolldown chooses it.
-/// `views::Page::app_js_path` renders the same constant into the `<script>`
-/// tag that requests it.
-pub const APP_JS_PATH: &str = concat!("/assets/", env!("APP_JS_FILENAME"));
-
 /// Datastar's address: askama_datastar's vendored copy, named by a hash of its
 /// contents, which `askama_datastar::script::serve` lets a browser keep for good.
-pub static DATASTAR_JS_URL: std::sync::LazyLock<String> =
-    std::sync::LazyLock::new(|| askama_datastar::script::url("/assets/datastar.js"));
+pub static DATASTAR_JS_URL: LazyLock<String> =
+    LazyLock::new(|| askama_datastar::script::url("/assets/datastar.js"));
 
 /// Everything this page needs comes from this origin, so the policy says so.
 /// Nothing is fetched from a CDN and no handler is written into the markup —
@@ -55,182 +46,99 @@ pub static DATASTAR_JS_URL: std::sync::LazyLock<String> =
 /// attribute on any page does anything. It buys an attacker nothing on its
 /// own — `script-src 'self'` still refuses to load script from anywhere else —
 /// but it does mean escaping is the only thing standing between a string that
-/// reaches the DOM and code that runs. Askama escapes by default and nothing
-/// here opts out; `no_template_disables_escaping` is what keeps that true.
-///
-/// Shared verbatim with mcp-gateway, which reaches the same policy from the
-/// other direction: it had this without `unsafe-eval` until it wanted Datastar.
-const CSP: &str = "default-src 'self'; \
-     script-src 'self' 'unsafe-eval'; \
-     style-src 'self'; \
-     img-src 'self' data:; \
-     connect-src 'self'; \
-     form-action 'self'; \
-     frame-ancestors 'none'; \
-     base-uri 'none'; \
-     object-src 'none'";
-
-/// Applied to every response. Harmless on the SSE and JSON the app returns, and
-/// cheaper to reason about than deciding per route which ones render HTML.
-async fn security_headers(
-    request: axum::extract::Request,
-    next: axum::middleware::Next,
-) -> Response {
-    let mut response = next.run(request).await;
-    let headers = response.headers_mut();
-    headers.insert(
-        header::CONTENT_SECURITY_POLICY,
-        axum::http::HeaderValue::from_static(CSP),
-    );
-    headers.insert(
-        header::X_CONTENT_TYPE_OPTIONS,
-        axum::http::HeaderValue::from_static("nosniff"),
-    );
-    headers.insert(
-        header::REFERRER_POLICY,
-        axum::http::HeaderValue::from_static("no-referrer"),
-    );
-    // Redundant beside frame-ancestors for anything current, and free.
-    headers.insert(
-        header::X_FRAME_OPTIONS,
-        axum::http::HeaderValue::from_static("DENY"),
-    );
-    response
+/// reaches the DOM and code that runs. Askama escapes by default, and the
+/// escaping guard in `views`' tests checks every answer escapes text once.
+fn csp() -> Csp {
+    Csp::new().datastar()
 }
+
+/// The stylesheet as `just css` builds it, naming the typeface by a path
+/// relative to itself.
+const APP_CSS_SOURCE: &str = include_str!("../assets/app.css");
+
+/// Beside the stylesheet because @radiosilence/koan-kit-web names it by a
+/// relative URL; `just css` copies it out of the package.
+static FONT: Asset = Asset::new(include_bytes!("../assets/geist-mono.woff2"), "font/woff2");
+
+/// The stylesheet as served: its `@font-face` names the typeface by the
+/// fingerprinted address it is cached under, so a new typeface reaches a
+/// browser holding the old stylesheet's.
+static APP_CSS: LazyLock<Asset> = LazyLock::new(|| {
+    let css = APP_CSS_SOURCE.replace(
+        "url(geist-mono.woff2)",
+        &format!("url({})", FONT.url("/assets/geist-mono.woff2")),
+    );
+    Asset::new(css.leak().as_bytes(), "text/css; charset=utf-8")
+});
+
+static APP_JS: Asset = Asset::new(
+    include_bytes!("../assets/app.js"),
+    "text/javascript; charset=utf-8",
+);
+static MANIFEST: Asset = Asset::new(
+    include_bytes!("../assets/manifest.webmanifest"),
+    "application/manifest+json",
+);
+static ICON_SVG: Asset = Asset::new(include_bytes!("../assets/icon.svg"), "image/svg+xml");
+static FAVICON: Asset = Asset::new(include_bytes!("../assets/favicon.ico"), "image/x-icon");
+static APPLE_TOUCH_ICON: Asset = Asset::new(
+    include_bytes!("../assets/apple-touch-icon.png"),
+    "image/png",
+);
+static ICON_192: Asset = Asset::new(include_bytes!("../assets/icon-192.png"), "image/png");
+static ICON_512: Asset = Asset::new(include_bytes!("../assets/icon-512.png"), "image/png");
+static ICON_192_MASKABLE: Asset = Asset::new(
+    include_bytes!("../assets/icon-192-maskable.png"),
+    "image/png",
+);
+static ICON_512_MASKABLE: Asset = Asset::new(
+    include_bytes!("../assets/icon-512-maskable.png"),
+    "image/png",
+);
 
 /// Served from the binary rather than a volume: the stylesheet and the script
 /// bundle are build outputs, so a mount would be a second thing to keep in
 /// step with the image.
 ///
-/// Bodies are bytes rather than `&str` because half of these are now PNGs.
-/// `include_bytes!` covers the text ones too — the content type is stated here
-/// either way, so nothing was being checked by the compiler's insistence that
-/// the script was UTF-8.
+/// The page names each by `asset_url`, which carries a hash of its bytes, so a
+/// browser keeps it for good and a deploy's page fetches the new copy. Asked
+/// for by a bare path, as the manifest names its icons and a browser asks for
+/// `/favicon.ico`, it is cached for an hour.
 ///
 /// `/favicon.ico` sits beside its `/assets` copy because that is the path a
 /// browser asks for on its own, before it has parsed any `<link>` — and the
 /// only router that would otherwise answer it is behind the session layer, so
 /// an unauthenticated tab would get a login redirect where it wanted an image.
-const ASSETS: [(&str, &str, &[u8]); 12] = [
-    (
-        APP_JS_PATH,
-        "text/javascript; charset=utf-8",
-        include_bytes!(concat!("../assets/", env!("APP_JS_FILENAME"))),
-    ),
-    (
-        "/assets/app.css",
-        "text/css; charset=utf-8",
-        include_bytes!("../assets/app.css"),
-    ),
-    // Beside the stylesheet because @radiosilence/koan-kit-web names it by a relative
-    // URL; `just css` copies it out of the package.
-    (
-        "/assets/geist-mono.woff2",
-        "font/woff2",
-        include_bytes!("../assets/geist-mono.woff2"),
-    ),
-    (
-        "/assets/manifest.webmanifest",
-        "application/manifest+json",
-        include_bytes!("../assets/manifest.webmanifest"),
-    ),
-    (
-        "/assets/icon.svg",
-        "image/svg+xml",
-        include_bytes!("../assets/icon.svg"),
-    ),
-    (
-        "/assets/favicon.ico",
-        "image/x-icon",
-        include_bytes!("../assets/favicon.ico"),
-    ),
-    (
-        "/favicon.ico",
-        "image/x-icon",
-        include_bytes!("../assets/favicon.ico"),
-    ),
-    (
-        "/assets/apple-touch-icon.png",
-        "image/png",
-        include_bytes!("../assets/apple-touch-icon.png"),
-    ),
-    (
-        "/assets/icon-192.png",
-        "image/png",
-        include_bytes!("../assets/icon-192.png"),
-    ),
-    (
-        "/assets/icon-512.png",
-        "image/png",
-        include_bytes!("../assets/icon-512.png"),
-    ),
-    (
-        "/assets/icon-192-maskable.png",
-        "image/png",
-        include_bytes!("../assets/icon-192-maskable.png"),
-    ),
-    (
-        "/assets/icon-512-maskable.png",
-        "image/png",
-        include_bytes!("../assets/icon-512-maskable.png"),
-    ),
-];
-
-/// How an asset may be cached. The script bundle's name changes with its
-/// content, so it is cached for good. Everything else keeps its name across
-/// deploys and is revalidated against an ETag instead, so a deploy's new
-/// stylesheet is never paired with the old one from cache.
-fn cache_headers(path: &str, body: &[u8]) -> (&'static str, Option<String>) {
-    if path == APP_JS_PATH {
-        return ("public, max-age=31536000, immutable", None);
-    }
-    use std::hash::{DefaultHasher, Hash as _, Hasher as _};
-    let mut hasher = DefaultHasher::new();
-    body.hash(&mut hasher);
-    ("no-cache", Some(format!("\"{:016x}\"", hasher.finish())))
+fn assets() -> [(&'static str, &'static Asset); 12] {
+    [
+        ("/assets/app.js", &APP_JS),
+        ("/assets/app.css", &*APP_CSS),
+        ("/assets/geist-mono.woff2", &FONT),
+        ("/assets/manifest.webmanifest", &MANIFEST),
+        ("/assets/icon.svg", &ICON_SVG),
+        ("/assets/favicon.ico", &FAVICON),
+        ("/favicon.ico", &FAVICON),
+        ("/assets/apple-touch-icon.png", &APPLE_TOUCH_ICON),
+        ("/assets/icon-192.png", &ICON_192),
+        ("/assets/icon-512.png", &ICON_512),
+        ("/assets/icon-192-maskable.png", &ICON_192_MASKABLE),
+        ("/assets/icon-512-maskable.png", &ICON_512_MASKABLE),
+    ]
 }
 
-/// `If-None-Match` matches under weak comparison (RFC 9110 13.1.2): any entry
-/// of a list, `*`, and a `W/` validator, which is what an ingress that
-/// compresses the response turns a strong one into.
-fn none_match(header: &axum::http::HeaderValue, etag: &str) -> bool {
-    let Ok(header) = header.to_str() else {
-        return false;
-    };
-    header.split(',').map(str::trim).any(|candidate| {
-        candidate == "*" || candidate.strip_prefix("W/").unwrap_or(candidate) == etag
-    })
-}
-
-async fn asset(
-    headers: axum::http::HeaderMap,
-    content_type: &'static str,
-    cache_control: &'static str,
-    etag: Option<String>,
-    body: &'static [u8],
-) -> Response {
-    let Some(etag) = etag else {
-        return (
-            [
-                (header::CONTENT_TYPE, content_type),
-                (header::CACHE_CONTROL, cache_control),
-            ],
-            body,
-        )
-            .into_response();
-    };
-    let fresh = headers
-        .get(header::IF_NONE_MATCH)
-        .is_some_and(|v| none_match(v, &etag));
-    let common = [
-        (header::CACHE_CONTROL, cache_control.to_string()),
-        (header::ETAG, etag),
-    ];
-    if fresh {
-        (StatusCode::NOT_MODIFIED, common).into_response()
-    } else {
-        (common, [(header::CONTENT_TYPE, content_type)], body).into_response()
-    }
+/// The fingerprinted address of the asset served at `path`, for the page's
+/// `href` and `src`.
+///
+/// # Panics
+///
+/// If nothing is served at `path`: the templates name these, so it is the
+/// program's own mistake, and rendering the page in any test finds it.
+pub fn asset_url(path: &str) -> String {
+    let (path, asset) = assets()
+        .into_iter()
+        .find(|(served, _)| *served == path)
+        .unwrap_or_else(|| panic!("no asset is served at {path}"));
+    asset.url(path)
 }
 
 #[tokio::main]
@@ -295,15 +203,11 @@ async fn main() -> anyhow::Result<()> {
         .merge(auth::routes::router())
         .route("/healthz", get(|| async { "ok" }))
         .route("/assets/datastar.js", get(askama_datastar::script::serve));
-    for (path, content_type, body) in ASSETS {
-        let (cache_control, etag) = cache_headers(path, body);
-        app = app.route(
-            path,
-            get(move |headers| asset(headers, content_type, cache_control, etag.clone(), body)),
-        );
+    for (path, asset) in assets() {
+        app = app.route(path, get(asset.serve()));
     }
     let app = app
-        .layer(axum::middleware::from_fn(security_headers))
+        .layer(SecurityHeaders::new(&csp()))
         // The default predicate leaves `text/event-stream` alone: an encoder
         // buffers, and the live stream must reach the browser as it is written.
         .layer(tower_http::compression::CompressionLayer::new())
@@ -348,41 +252,7 @@ async fn shutdown(mut term: tokio::signal::unix::Signal, poll: poll::Poll) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[tokio::test]
-    async fn the_hashed_bundle_is_immutable_and_everything_else_revalidates() {
-        let serve = |headers, path, body: &'static [u8]| {
-            let (cache_control, etag) = cache_headers(path, body);
-            asset(headers, "text/plain", cache_control, etag, body)
-        };
-        let bundle = serve(Default::default(), APP_JS_PATH, b"js").await;
-        assert_eq!(
-            bundle.headers()[header::CACHE_CONTROL],
-            "public, max-age=31536000, immutable"
-        );
-        assert!(!bundle.headers().contains_key(header::ETAG));
-
-        let css = serve(Default::default(), "/assets/app.css", b"css").await;
-        assert_eq!(css.headers()[header::CACHE_CONTROL], "no-cache");
-        let etag = css.headers()[header::ETAG].to_str().unwrap().to_string();
-
-        for sent in [
-            etag.clone(),
-            format!("W/{etag}"),
-            format!("\"other\", {etag}"),
-            "*".to_string(),
-        ] {
-            let mut headers = axum::http::HeaderMap::new();
-            headers.insert(header::IF_NONE_MATCH, sent.parse().unwrap());
-            let again = serve(headers, "/assets/app.css", b"css").await;
-            assert_eq!(again.status(), StatusCode::NOT_MODIFIED, "{sent}");
-        }
-
-        let mut headers = axum::http::HeaderMap::new();
-        headers.insert(header::IF_NONE_MATCH, etag.parse().unwrap());
-        let changed = serve(headers, "/assets/app.css", b"new css").await;
-        assert_eq!(changed.status(), StatusCode::OK);
-    }
+    use axum::http::header;
 
     #[tokio::test]
     async fn every_response_carries_the_security_headers() {
@@ -390,9 +260,9 @@ mod tests {
         use axum::http::Request;
         use tower::ServiceExt;
 
-        let app = Router::new()
+        let app: Router = Router::new()
             .route("/", get(|| async { "hi" }))
-            .layer(axum::middleware::from_fn(security_headers));
+            .layer(SecurityHeaders::new(&csp()));
 
         let response = app
             .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
@@ -403,6 +273,10 @@ mod tests {
         let csp = headers[header::CONTENT_SECURITY_POLICY].to_str().unwrap();
         assert!(csp.contains("default-src 'self'"));
         assert!(csp.contains("frame-ancestors 'none'"));
+        assert!(
+            csp.contains("'unsafe-eval'"),
+            "Datastar needs the eval hatch"
+        );
         // Datastar cannot work without the eval hatch, so that one is stated
         // and explained above. `unsafe-inline` is the one nothing here needs,
         // and it is what someone reaches for to make a stray inline handler
@@ -413,7 +287,21 @@ mod tests {
         );
         assert_eq!(headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
         assert_eq!(headers[header::X_FRAME_OPTIONS], "DENY");
-        assert_eq!(headers[header::REFERRER_POLICY], "no-referrer");
+        assert_eq!(headers[header::REFERRER_POLICY], "same-origin");
+    }
+
+    /// The stylesheet loads the typeface by the address it is cached under.
+    #[tokio::test]
+    async fn the_stylesheet_names_the_fingerprinted_typeface() {
+        assert!(
+            APP_CSS_SOURCE.contains("url(geist-mono.woff2)"),
+            "the stylesheet no longer names the typeface this way; the rewrite in APP_CSS finds nothing"
+        );
+        let body = APP_CSS.response(None).into_body();
+        let css = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let css = std::str::from_utf8(&css).unwrap();
+        assert!(css.contains(&format!("url({})", FONT.url("/assets/geist-mono.woff2"))));
+        assert!(!css.contains("url(geist-mono.woff2)"));
     }
 
     /// With eval allowed, escaping is the only thing between a string that

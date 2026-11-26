@@ -284,11 +284,10 @@ impl Page {
         env!("CARGO_PKG_VERSION")
     }
 
-    /// Same reasoning as `version`: fixed at compile time, so a method rather
-    /// than a field every construction site would have to repeat. See
-    /// `crate::APP_JS_PATH`, which this and the route it names both read.
-    fn app_js_path(&self) -> &'static str {
-        crate::APP_JS_PATH
+    /// The attributes that open the live stream and open it again once it
+    /// ends or goes quiet, for an element of their own.
+    fn live(&self) -> askama_datastar::Html {
+        askama_datastar::reopen("/stream")
     }
 
     /// Datastar, as askama_datastar serves it, under `crate::DATASTAR_JS_URL`.
@@ -443,6 +442,95 @@ mod tests {
             length,
             completed_length,
             selected,
+        }
+    }
+
+    /// Text from aria2, the torrent and the person (names, file paths, error
+    /// and log messages, folder names) comes out escaped exactly once in the
+    /// page, the list, a row and the picker, and the templates' own markup not
+    /// at all.
+    #[test]
+    fn every_answer_escapes_text_exactly_once() {
+        use askama_datastar::escaping::{Guard, escaped};
+
+        const HOSTILE: &str = r#"<em>hostile "q" & 'x'</em>"#;
+        let guard = Guard::new(&[HOSTILE])
+            .templates(concat!(env!("CARGO_MANIFEST_DIR"), "/templates"))
+            .expect("templates/");
+        let log = || {
+            vec![Entry {
+                at: std::time::SystemTime::now(),
+                message: HOSTILE.to_string(),
+            }]
+        };
+        let downloading = Download {
+            bittorrent_name: Some(HOSTILE.to_string()),
+            files: vec![
+                file(
+                    1,
+                    &format!("/mnt/kontent/movies/{HOSTILE}/a.mkv"),
+                    10,
+                    5,
+                    true,
+                ),
+                file(
+                    2,
+                    &format!("/mnt/kontent/movies/{HOSTILE}/b.nfo"),
+                    1,
+                    0,
+                    false,
+                ),
+            ],
+            ..moving()
+        };
+        let failed = Download {
+            gid: "def".to_string(),
+            status: Status::Error,
+            error_message: Some(HOSTILE.to_string()),
+            bittorrent_name: Some(HOSTILE.to_string()),
+            ..Download::fixture()
+        };
+        let rows = || {
+            vec![
+                Row::new(&downloading, log(), false),
+                Row::new(&failed, log(), false),
+            ]
+        };
+        let picker = Browse {
+            parent: Some("/mnt/kontent".into()),
+            path: format!("/mnt/kontent/{HOSTILE}"),
+            label: HOSTILE.into(),
+            dirs: vec![DirView {
+                name: HOSTILE.into(),
+                path: format!("/mnt/kontent/{HOSTILE}/{HOSTILE}"),
+            }],
+        };
+        let row = rows().remove(0);
+        let answers = [
+            Page {
+                roots: vec![RootView {
+                    name: HOSTILE.into(),
+                    path: format!("/mnt/{HOSTILE}"),
+                }],
+                rows: rows(),
+                aria2_unreachable: false,
+            }
+            .render(),
+            Downloads {
+                rows: rows(),
+                aria2_unreachable: false,
+            }
+            .render(),
+            RowMarkup { row: &row }.render(),
+            picker.render(),
+        ];
+        for (i, answer) in answers.into_iter().enumerate() {
+            let answer = answer.expect("renders");
+            assert_eq!(guard.problems(&answer), [], "answer {i}");
+            assert!(
+                answer.contains(&escaped(HOSTILE)),
+                "answer {i} lost the text"
+            );
         }
     }
 
@@ -1340,7 +1428,7 @@ mod tests {
     /// side of it is otherwise silent until someone presses the button.
     #[test]
     fn every_ms_helper_a_template_calls_is_defined() {
-        const BUNDLE: &str = include_str!(concat!("../assets/", env!("APP_JS_FILENAME")));
+        const BUNDLE: &str = include_str!("../assets/app.js");
         const SOURCE: &str = include_str!("../web/ms.ts");
         let page = Page {
             roots: vec![],

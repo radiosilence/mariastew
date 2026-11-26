@@ -10,15 +10,11 @@ aube = "2.8.5"
 
 [tasks."js"]
 description = "Rebuild the browser bundle after changing web/"
-# One hashed file holding the app's code, so a deploy's new script cannot be
-# served from a cache holding the old one. Datastar is askama_datastar's,
-# served beside it. Typechecking is
-# `typecheck`'s job. Sequential: the old hash's file has to be gone before
-# build.rs globs for the new one, or it finds two and refuses to guess.
-run = [
-  "rm -f assets/app-*.js",
-  "./node_modules/.bin/rolldown web/main.ts --platform browser --format esm --minify --dir assets --entryFileNames app-[hash].js",
-]
+# One file holding the app's code. The server names it by a hash of its bytes
+# (askama_datastar's `Asset`), so a deploy's new script is never served from a
+# cache holding the old one. Datastar is askama_datastar's, served beside it.
+# Typechecking is `typecheck`'s job.
+run = "./node_modules/.bin/rolldown web/main.ts --platform browser --format esm --minify --dir assets --entryFileNames app.js"
 # The output is committed, as assets/app.css is (`just css`).
 
 [tasks."typecheck"]

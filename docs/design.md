@@ -486,29 +486,28 @@ whether the stream is up is therefore the one thing the page must not ask.
 
 What is left is silence, and silence had to be made to mean something first:
 the stream sends the rows whose hash moved, so a queue with nothing running is
-silent because there is nothing to say. `HEARTBEAT` (`src/routes.rs`) is a
-`datastar-heartbeat` frame on a five-second timer, sent only when nothing else
-has gone down the wire — a busy stream sends none. It is on its own timer
-rather than counted off the poller's ticks, because what it reports is that
-*this connection* is up: a poller wedged on an aria2 that stopped answering
-would otherwise take every page's heartbeat down with it and reconnect all of
-them, to a server whose problem another connection does not solve. It replaces
-axum's keep-alive rather than joining it — both keep a proxy from timing out an
-idle connection, only this one reaches the page.
+silent because there is nothing to say. The stream is askama_datastar's
+`stream`, which sends a `datastar-heartbeat` event after 15 seconds without a
+patch. The heartbeat runs on the connection's own timer rather than off the
+poller's ticks, so a poller wedged on an aria2 that stopped answering does not
+take every page's heartbeat down with it and reconnect all of them, to a server
+whose problem another connection does not solve.
 
-The page then watches the quiet. `ms.streamSeen` records every frame that
-arrives on the stream, `ms.streamLost` answers whether it has been longer than
-three heartbeats, and `data-on-interval` reconnects when it has. Datastar
-announcing a request *started* counts as a frame, which is what keeps a
-reconnect that cannot connect from retrying every tick: the attempt resets the
-clock, so a server that is down is asked once per timeout.
+The page watches the quiet with askama_datastar's `reopen`, written onto an
+element of its own in `page.html`. Every five seconds while the page is shown
+it opens the stream again if the stream ended or has said nothing for 40
+seconds, two heartbeats' worth, and it reopens one that ended while the page
+was hidden as soon as the page is shown. A stream refused with 401, a session
+the deploy ended, is not asked again until the page is next shown: no reconnect
+gets past that, and asking forever would be a request every five seconds for
+as long as the tab is open.
 
-`data-on:visibilitychange` is the same reconnect, on the one occasion worth not
-waiting out the timeout for — a phone coming back into a hand, where sixteen
-seconds is spent looking at a stale screen. It is unconditional, for the reason
-above: the return is exactly the moment liveness cannot be judged. The cost is
-one redundant connection, whose first tick is the container, which is the fresh
-data that was wanted anyway.
+The server ends each stream after ten minutes (`PACE` in `src/routes.rs`,
+through askama_datastar's `paced`), and the page opens the next. A socket that
+died without either end noticing would otherwise hold its viewer, and with it
+the poller's busy rate, for as long as TCP takes to give up. The lifetime is
+long because each new stream begins with the whole list, and the page shows
+nothing new for the few seconds before `reopen` sees the old one has ended.
 
 ## Seeding, and why cancel has two meanings
 
