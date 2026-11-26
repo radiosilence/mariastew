@@ -1184,10 +1184,10 @@ mod tests {
         );
     }
 
-    /// Datastar retries a stream whose body errors within a second, and one
-    /// that ends cleanly only when the page's watchdog fires.
+    /// A stream ends when the server shuts down, so graceful shutdown is not
+    /// held open by it; the page's `reopen` opens one on the next pod.
     #[tokio::test]
-    async fn shutting_down_aborts_the_stream_rather_than_ending_it() {
+    async fn shutting_down_ends_the_stream() {
         let state = state(String::new());
         state.poll.close();
         let session = crate::auth::session::Session {
@@ -1202,10 +1202,7 @@ mod tests {
         )
         .await
         .expect("the stream ends once closed");
-        assert!(
-            body.is_err(),
-            "the stream ended cleanly instead of aborting"
-        );
+        assert!(body.is_ok(), "the stream errored rather than ending");
     }
 
     fn rendered(rows: &[(&str, u64)]) -> Vec<RenderedRow> {
