@@ -9,8 +9,11 @@
 //! downloads there are, or their order, sends `#downloads` whole.
 //!
 //! The page's body says what it drew in the `seen` signal, so a stream's
-//! first pass sends only what changed after the body was drawn, and a stream
-//! ending sets `seen` to what it drew, so the next one carries on from there.
+//! first pass sends only what changed after the body was drawn. Every pass
+//! that sends a region sets `seen` in the same answer, so the page's `seen`
+//! always matches what it shows, however the stream ends: Datastar drops a
+//! stream when the page is hidden or the network fails, and the one that
+//! replaces it starts from what the page really has.
 
 use askama_datastar::PatchSignals;
 use axum::response::sse::Event;
@@ -113,33 +116,37 @@ impl Downloads {
     }
 
     /// What `snapshot` changes on the page.
+    /// What `snapshot` changes on the page, and `seen` as the page will have
+    /// it, whenever anything changed.
     pub(in crate::web) fn draw(&mut self, state: &AppState, snapshot: &Snapshot) -> Vec<Event> {
-        let Some(downloads) = &snapshot.downloads else {
+        let mut events: Vec<Event> = match &snapshot.downloads {
             // Sent once per outage; the first answer after it sends the list.
-            if self.seen.as_ref().is_some_and(|seen| seen.down) {
-                return Vec::new();
+            None if self.seen.as_ref().is_some_and(|seen| seen.down) => Vec::new(),
+            None => {
+                self.seen = Some(Seen::unreachable());
+                vec![List::unreachable().draw().patch().into()]
             }
-            self.seen = Some(Seen::unreachable());
-            return vec![List::unreachable().draw().patch().into()];
+            Some(downloads) => {
+                let drawn = drawn(state, downloads);
+                let now = Seen::of(&drawn);
+                let events = match unsent(self.seen.as_ref(), &now) {
+                    Some(rows) => rows
+                        .into_iter()
+                        .map(|i| drawn[i].html.patch().into())
+                        .collect(),
+                    None => vec![List::of(&drawn).draw().patch().into()],
+                };
+                self.seen = Some(now);
+                events
+            }
         };
-        let drawn = drawn(state, downloads);
-        let now = Seen::of(&drawn);
-        let events = match unsent(self.seen.as_ref(), &now) {
-            Some(rows) => rows
-                .into_iter()
-                .map(|i| drawn[i].html.patch().into())
-                .collect(),
-            None => vec![List::of(&drawn).draw().patch().into()],
-        };
-        self.seen = Some(now);
+        if !events.is_empty()
+            && let Some(seen) = &self.seen
+        {
+            let json = serde_json::json!({ "seen": seen }).to_string();
+            events.push(PatchSignals::new(json).into());
+        }
         events
-    }
-
-    /// `seen` as this stream leaves the page.
-    pub(in crate::web) fn seen(&self) -> Option<Event> {
-        let seen = self.seen.as_ref()?;
-        let json = serde_json::json!({ "seen": seen }).to_string();
-        Some(PatchSignals::new(json).into())
     }
 }
 
@@ -198,13 +205,51 @@ mod tests {
         let state = AppState::fixture(String::new());
         let mut list = Downloads::open(Some(seen(&[])));
         let down = Snapshot { downloads: None };
-        assert_eq!(list.draw(&state, &down).len(), 1);
+        // The warning, and `seen` with it.
+        assert_eq!(list.draw(&state, &down).len(), 2);
         assert!(list.draw(&state, &down).is_empty());
         let back = Snapshot {
             downloads: Some(std::sync::Arc::new(Vec::new())),
         };
-        assert_eq!(list.draw(&state, &back).len(), 1);
+        assert_eq!(list.draw(&state, &back).len(), 2);
         assert!(list.draw(&state, &back).is_empty());
+    }
+
+    fn snapshot(gids: &[&str]) -> Snapshot {
+        Snapshot {
+            downloads: Some(std::sync::Arc::new(
+                gids.iter()
+                    .map(|gid| crate::aria2::Download {
+                        gid: gid.to_string(),
+                        ..crate::aria2::Download::fixture()
+                    })
+                    .collect(),
+            )),
+        }
+    }
+
+    /// A stream dropped without ending (a hidden page, a lost network) sends
+    /// nothing as it goes, so the page's `seen` must already match what it
+    /// shows. The page loads with a and b, c arrives and is drawn, the stream
+    /// is dropped, and c leaves: the stream opened with the page's `seen` has
+    /// to take c off the page.
+    #[test]
+    fn a_stream_dropped_mid_way_leaves_the_page_a_seen_that_matches_it() {
+        let state = AppState::fixture(String::new());
+        let loaded = snapshot(&["a", "b"]);
+        let loaded = Seen::of(&drawn(&state, loaded.downloads.as_deref().unwrap()));
+        let mut first = Downloads::open(Some(loaded.clone()));
+        let sent = first.draw(&state, &snapshot(&["a", "b", "c"]));
+        assert_eq!(sent.len(), 2, "the list, and `seen` with it");
+        // What the page holds once that answer landed.
+        let page = first.seen.clone();
+        assert_ne!(page.as_ref(), Some(&loaded));
+
+        let mut next = Downloads::open(page);
+        assert!(
+            !next.draw(&state, &snapshot(&["a", "b"])).is_empty(),
+            "c stayed on the page"
+        );
     }
 
     #[test]

@@ -461,8 +461,12 @@ whole `#downloads` list instead, which draws each row from the same
 
 A stream does not begin by sending what the page already has. The page's body
 says which rows it drew, and a fingerprint of each, in the `seen` signal; a
-stream's first pass sends only the rows that changed since, and a stream that
-ends sets `seen` to what it drew, so the next carries on from there. A page
+stream's first pass sends only the rows that changed since. Every pass that
+sends a row or the list sets `seen` in the same answer, so it matches what the
+page shows however the stream stops: Datastar drops a stream without a word
+when the page is hidden or the network fails, and a `seen` handed over only at
+a clean end would leave the next stream trusting rows the page no longer
+has. A page
 that drew the unreachable warning has no rows to keep, so the first answer
 after it sends the list, which is what retires the warning.
 

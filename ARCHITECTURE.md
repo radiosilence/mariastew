@@ -110,8 +110,10 @@ session every second, so a sign-out elsewhere ends it.
 
 A stream draws only what changed after the page did. The page's body records
 each row it drew and a fingerprint of its markup in `seen`; the stream's first
-pass sends only rows whose fingerprint moved, and a stream that ends sets
-`seen` to what it drew, so the next carries on from there. A row is compared
+pass sends only rows whose fingerprint moved. Every pass that sends a region
+sets `seen` in the same answer, so the page's `seen` always matches what it
+shows however the stream ends (Datastar drops a stream when the page is hidden
+or the network fails), and the next carries on from there. A row is compared
 against what went down this connection, not against the previous snapshot, so
 a row that changed in a pass a slow client skipped still arrives. The list is
 sent whole only when a download arrives, leaves or moves, since a morph by id

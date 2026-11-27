@@ -81,11 +81,6 @@ pub(super) async fn serve(
                 yield event;
             }
         }
-        // The stream that replaces this one carries on from what this one
-        // drew, rather than sending the list again.
-        if let Some(event) = list.seen() {
-            yield event;
-        }
     };
     askama_datastar::stream(events)
 }

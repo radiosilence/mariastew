@@ -2,7 +2,7 @@
 //!
 //! Adding a magnet is two steps with a gap in the middle: aria2 resolves the
 //! metadata and creates the real download paused (`--pause-metadata`), and
-//! `add::start` — detached from the request that asked for it — reads
+//! `add::finish`, detached from the request that asked for it, reads
 //! the file list, narrows it to what is worth keeping, and releases it. The
 //! second step lives in one process's memory and nothing restores it, so a pod
 //! replaced inside the gap leaves a download aria2 will hold, paused, forever.
@@ -11,7 +11,7 @@
 //! to resolve, and a resolve is minutes on a sparse swarm.
 //!
 //! **An unfinished add is a paused download with no `select-file`.** aria2
-//! holds that mark, `add::start_inner` writes it exactly once at the
+//! holds that mark, `add::finish` writes it exactly once at the
 //! end of the sequence, and nothing else writes it at all — so its absence is
 //! the difference between a download waiting to be finished and one somebody
 //! deliberately paused, without inferring anything from names or byte counts.

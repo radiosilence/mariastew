@@ -141,7 +141,11 @@ async fn shown(state: &AppState, path: &str) -> Response {
         Destination::at(state, path).await
     };
     match picker {
-        Ok(picker) => crate::web::one(&picker.draw()),
+        // A refusal shown for an earlier press no longer applies.
+        Ok(picker) => askama_datastar::events([
+            picker.draw().patch().into(),
+            askama_datastar::clear("#add-error").into(),
+        ]),
         Err(message) => crate::web::one(&add::Error::of(message).draw()),
     }
 }
