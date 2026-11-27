@@ -190,18 +190,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::aria2::File;
     use crate::config::{Config, Root};
-
-    fn file(index: u32, path: &str, selected: bool) -> File {
-        File {
-            index,
-            path: path.to_string(),
-            length: 100,
-            completed_length: 100,
-            selected,
-        }
-    }
 
     fn download(dir: &std::path::Path, files: Vec<File>) -> Download {
         Download {
@@ -234,13 +223,6 @@ mod tests {
         let _ = tokio::fs::remove_dir_all(&root).await;
         tokio::fs::create_dir_all(&root).await.unwrap();
         root
-    }
-
-    async fn touch(path: &std::path::Path) {
-        tokio::fs::create_dir_all(path.parent().unwrap())
-            .await
-            .unwrap();
-        tokio::fs::write(path, b"bytes").await.unwrap();
     }
 
     /// An outage is not every download leaving the list. Treated as one, the
