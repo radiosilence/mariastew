@@ -48,7 +48,7 @@
     {%- for line in log %}
     <li class="flex gap-2">
       {{
-          kit::Time::millis(line.at_ms)
+          kit::Time::millis(*line.at_ms)
               .clock()
               .class("w-16 shrink-0 text-right tabular-nums text-muted")
       }}
