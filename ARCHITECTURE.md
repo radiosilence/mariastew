@@ -89,9 +89,10 @@ Sign-in, `/healthz` and the assets are outside both.
 ### The page
 
 `page::serve` draws the page two ways. A browser asking for the address gets
-the document around the body. The page itself asking in place gets the body
-morphed into `main` and the address as `$url` (`askama_datastar::address`);
-the document's `askama_datastar::history("url")` keeps the address bar on it.
+the document around the body. The page itself asking in place, as the kit's
+`Navigation` does on Back and Forward, gets the body morphed into `main` and
+the address as `$url` (`askama_datastar::address`); `Navigation`, placed once
+in the document, owns the history and keeps the address bar on `$url`.
 
 The page starts with the signals every page declares: `url`, which the
 stream's `reopen_on` names, and `seen`, what its stream carries on from. The
@@ -120,16 +121,19 @@ or the network fails), and the next carries on from there. A row is compared
 against what went down this connection, not against the previous snapshot, so
 a row that changed in a pass a slow client skipped still arrives. The list is
 sent whole only when a download arrives, leaves or moves, since a morph by id
-can neither add an element nor remove one. The kit names each request
-button's busy signal afresh on every render, so fingerprints leave those names
-out.
+can neither add an element nor remove one. The kit names each control's busy
+signal by what the control is, so a row drawn twice from one state is the same
+markup and its fingerprint holds; a row redrawn while its own request runs
+keeps its spinner turning.
 
 ### Actions
 
 An action changes something and answers with as little as it can:
 
 - **Pause, resume, clear**: the stream draws the change, so the answer is
-  empty, or a flash when aria2 refused. Clear waits for aria2 to let go
+  empty, or a flash when aria2 refused. An answer that is an error status, whose
+  body Datastar drops, is said by the flash region itself
+  (`kit::Flash::region().failed`), and a 401 sends the page to sign-in. Clear waits for aria2 to let go
   (`library::remove`), so the button's own wait is the wait, and closes the
   page's question with `kit::Confirm::close` when cancelling an unfinished
   download asked one.
@@ -172,7 +176,7 @@ where the server sends a region again, declared once in its template:
 | Where | Ids |
 |---|---|
 | Layout | `main` |
-| Downloads | `downloads`, each download's `dl-<gid>`, and its `files-<gid>` and `log-<gid>`, which keep their panels open across a morph |
+| Downloads | `downloads`, each download's `dl-<gid>`, and its `files-<gid>` and `log-<gid>`, whose ids are what make the kit's `Disclosure` keep a panel open across a morph |
 | The add sheet | `magnets`, `add-error`, `destination` |
 
 Two more ids are named by something outside them rather than patched: the
@@ -189,7 +193,8 @@ only. Buttons that send requests are busy for exactly as long as their own
 request runs; a download's buttons share a `busy_key` of its gid, so pressing
 one disables the other and its status turns while either runs, and the
 picker's controls share one key, so a second press while a folder is read does
-nothing. The stylesheet is compiled from the crate's own source (`just kit`
+nothing, and the listing being left sits under the kit's `Cover` for that
+key. The stylesheet is compiled from the crate's own source (`just kit`
 links it), so one version in `Cargo.lock` names both the markup and the rules
 that draw it. What the kit cannot yet express is tracked on
 radiosilence/koan#2365.

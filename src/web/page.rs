@@ -2,11 +2,11 @@
 //! downloads ([`downloads`]).
 //!
 //! [`serve`] draws it two ways. A browser asking for the address gets the
-//! document around the body. The page itself asking, through a link or form
-//! that loads in place, gets the body morphed into `main` and the address as
-//! `$url` (`askama_datastar::address`), which the document's
-//! `askama_datastar::history("url")` keeps the address bar on. So a reload, a
-//! shared link, back and forward all draw what the address names.
+//! document around the body. The page itself asking, as the kit's
+//! `Navigation` does on Back and Forward, gets the body morphed into `main` and
+//! the address as `$url` (`askama_datastar::address`), which `Navigation`
+//! keeps the address bar on. So a reload, a shared link, back and forward all
+//! draw what the address names.
 
 use axum::extract::{OriginalUri, State};
 use axum::http::HeaderMap;

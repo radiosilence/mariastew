@@ -11,9 +11,11 @@
     <link rel="manifest" href="{{ self.asset("/assets/manifest.webmanifest") }}">
     <script type="module" src="{{ self.asset("/assets/app.js") }}"></script>
   </head>
-  <body data-signals="{{ signals }}"{{ self.history() }}>
+  <body data-signals="{{ signals }}">
     {{ kit::SkipLink::new("skip to the downloads", "downloads") }}
     <div hidden{{ self.stream() }}></div>
+    {#- Owns the history: Back and Forward load the entry in place, with the address following `$url`. #}
+    {{ kit::Navigation::new() }}
     {{ main }}
     {#- Below the list, where a version is looked for. It clears the home indicator, since it is the last thing on
         the page. #}
@@ -21,6 +23,7 @@
       {{ kit::Release::new("mariastew", self.version(), "https://github.com/radiosilence/mariastew") }}
     </footer>
     {{ kit::Confirm::new("keep it") }}
-    {{ kit::Flash::region() }}
+    {#- Datastar drops an error answer's body, so the region says a failure itself; a 401 is a session that ended. #}
+    {{ kit::Flash::region().failed("that did not work — try again.").unreachable("mariastew could not be reached.").sign_in("/auth/login") }}
   </body>
 </html>

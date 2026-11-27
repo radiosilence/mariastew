@@ -27,12 +27,6 @@ impl Layout {
         super::assets::url(path)
     }
 
-    /// The address bar following `$url`, the address a page loaded in place
-    /// shows.
-    fn history(&self) -> Html {
-        askama_datastar::history("url")
-    }
-
     /// The live stream, opened again whenever it ends or goes quiet, and
     /// afresh when the address changes. Every signal named here is declared
     /// by every page (`page::signals`): an undeclared one stops the stream

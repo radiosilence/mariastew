@@ -12,6 +12,8 @@
     {%- endif %}
     <span class="min-w-0 flex-1 break-words text-muted">{% if label.is_empty() %}all destinations{% else %}{{ label }}{% endif %}</span>
   </div>
+  {#- The listing being left is covered while the next one is read, so it is neither read nor pressed on its way out. #}
+  {% filter kit::wrap(kit::Cover::with("destination")) %}
   {%- if folders.is_empty() %}
   {%- if parent.is_some() %}
   {{ kit::Empty::new("this folder is empty").compact() }}
@@ -28,6 +30,7 @@
     {%- endfor %}
   </ul>
   {%- endif %}
+  {% endfilter %}
   <div class="controls">
     {{ kit::Input::hidden("parent", path).attr("form", "mkdir-form") }}
     {{ kit::Input::text("name").label("new folder name").placeholder("new folder name").autocomplete("off").attr("enterkeyhint", "done").attr("form", "mkdir-form").class("min-w-0 flex-1").required() }}

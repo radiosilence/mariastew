@@ -1,7 +1,7 @@
 {#- One download. Collapsed, it answers "how is it going": name, state, bar, destination, and the rate and time left
     while anything moves. Open, it answers "what is aria2 doing". It keeps its `open` across a morph, so an open panel
     goes on updating in place. #}
-{% filter kit::wrap(kit::Disclosure::new("").id(self.id()).datastar("preserve-attr", "open").class("border-b border-rule")) %}
+{% filter kit::wrap(kit::Disclosure::new("").id(self.id()).class("border-b border-rule")) %}
 <summary class="flex min-h-14 items-center gap-3 py-3">
   <div class="min-w-0 flex-1">
     <div class="flex items-baseline justify-between gap-2">
@@ -19,14 +19,8 @@
 </summary>
 <div class="flex flex-col gap-3 pb-4">
   {{ self.readings() }}
-  {%- if pieces.is_some() || info_hash.is_some() %}
-  <div class="break-all text-fine text-muted">
-    {%- if let Some(pieces) = pieces %}<p class="my-0">{{ pieces }}</p>{% endif %}
-    {%- if let Some(hash) = info_hash %}<p class="my-0">{{ hash }}</p>{% endif %}
-  </div>
-  {%- endif %}
   {%- if !files.is_empty() %}
-  {% filter kit::wrap(kit::Disclosure::new("").id(self.files_id()).datastar("preserve-attr", "open")) %}
+  {% filter kit::wrap(kit::Disclosure::new("").id(self.files_id())) %}
   <summary class="text-fine">files <span class="text-muted">— keeping {{ selected_count }} of {{ file_count }}{% if let Some(skipped) = skipped %}, {{ skipped }}{% endif %}</span></summary>
   <ul class="flex flex-col gap-2 text-fine">
     {%- for file in files %}
@@ -49,7 +43,7 @@
   {%- if !log.is_empty() %}
   {#- What happened while adding it, which aria2 has no record of. The time is UTC in the markup and the reader's own
       zone once the browser rewrites it from `data-at`. #}
-  {% filter kit::wrap(kit::Disclosure::new("").id(self.log_id()).datastar("preserve-attr", "open")) %}
+  {% filter kit::wrap(kit::Disclosure::new("").id(self.log_id())) %}
   <summary class="text-fine">logs <span class="text-muted">— {{ log.len() }} entries</span></summary>
   <ol class="flex flex-col gap-1 text-fine">
     {%- for line in log %}
@@ -72,7 +66,7 @@
   {#- "clear" on a finished row takes it off the list and keeps the files; on an unfinished row the same slot deletes
       what it wrote, so it says both halves and asks first. One busy group per download, so pressing one disables the
       other and the status turns while either runs. #}
-  <div class="flex gap-2">
+  <div class="actions">
     {%- if clearing %}
     {{ kit::Button::bordered("clearing").busy(true).class("flex-1") }}
     {%- else %}

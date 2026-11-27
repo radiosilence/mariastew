@@ -365,6 +365,8 @@ impl Download {
                     None => self.uploaded.clone(),
                 },
             )
+            .optional("pieces", self.pieces.as_deref())
+            .optional("hash", self.info_hash.as_deref())
             .class("text-fine")
     }
 }
