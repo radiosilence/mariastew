@@ -995,6 +995,36 @@ mod tests {
         let _ = tokio::fs::remove_dir_all(&root).await;
     }
 
+    /// A record file that cannot be read, cut short by a crash or garbled, is
+    /// no record: every download in it is unknown, and nothing is swept.
+    #[tokio::test]
+    async fn an_unreadable_record_sweeps_nothing() {
+        for (name, contents) in [
+            ("garbled", &b"not json at all"[..]),
+            (
+                "truncated",
+                &br#"{"files":{"gid1":["/x/poster.jpg"]},"ord"#[..],
+            ),
+        ] {
+            let root = temp_root(&format!("unreadable-{name}")).await;
+            let kept = root.join("state");
+            tokio::fs::create_dir_all(&kept).await.unwrap();
+            tokio::fs::write(kept.join("preexisting.json"), contents)
+                .await
+                .unwrap();
+            let poster = root.join("Show/poster.jpg");
+            touch(&poster).await;
+            let d = finished(&root, vec![file(1, poster.to_str().unwrap(), true)]);
+
+            let mut state = sweep_state(root.clone());
+            state.preexisting = crate::state::Preexisting::load(Some(&kept)).await;
+            sweep(&state, &d).await;
+
+            assert!(poster.exists(), "a {name} record swept a file");
+            let _ = tokio::fs::remove_dir_all(&root).await;
+        }
+    }
+
     /// A download with no record at all, as one added before the record was
     /// kept, is not swept: its complete garbage may be files that were there.
     #[tokio::test]
