@@ -10,6 +10,7 @@ is the model). Why the service behaves as it does (the polling rates, what a
 row's status means, why cancel has two meanings) is in
 [docs/design.md](docs/design.md).
 
+<<<<<<< HEAD
 ## The service
 
 `main.rs` builds one `AppState` (configuration, the aria2 client, sessions,
@@ -39,6 +40,35 @@ the poller, the activity log and the in-flight marks) and serves
   download wrote, and sends Telegram messages, drawn from `templates/notify/`.
 
 None of these import anything from `web`.
+||||||| 19c5f31
+=======
+## The service
+
+`main.rs` builds one `AppState` (configuration, the aria2 client, sessions,
+the poller, the activity log and the in-flight marks) and serves
+`web::router` on one listener.
+
+- **Configuration** is read once at start (`Config::from_env`); a missing or
+  malformed value fails startup.
+- **Auth** is a session layer over the whole protected router
+  (`auth::extract::require_session`), so a route added later is protected by
+  construction. Sign-in is OIDC against the estate's issuer (`auth::oidc`).
+- **The poller** (`poll`) is the only thing that asks aria2 what it holds: one
+  task, at the page's rate while any page is open and the notifier's while
+  none is, publishing snapshots on a `watch` channel.
+- **Adding** (`add`) starts a magnet in aria2 and finishes it detached: it
+  follows the magnet to the download it becomes, narrows that to the files
+  worth keeping (`filter`) and releases it. `resume` finishes an add a restart
+  interrupted.
+- **Removal** (`library`) takes a download out of aria2 and deletes from the
+  media library what an unfinished one wrote; every deletion goes through
+  `library::remove_contained`.
+- **The notifier** (`notify`) reads the poller's snapshots, records health
+  changes in the activity log, sweeps garbage a finished download wrote, and
+  sends Telegram messages, drawn from `templates/notify/`.
+
+None of these import anything from `web`.
+>>>>>>> origin/main
 
 ## The web UI
 
