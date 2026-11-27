@@ -73,9 +73,9 @@ sheet, by any of the ways a dialog closes, asks the server for it fresh.
 The kit's `.sheet` owns the dialog's insets, width and height cap,
 because a `<dialog>` already has all four from the user agent — `width:
 fit-content`, `margin: auto`, `max-width: calc(100% - 6px - 2em)` — and a
-margin utility only argues with those, where an author rule wins outright. The
-utilities that used to sit on the element asked for the full width, got 38px
-less than it, and put every pixel of the shortfall on one side.
+margin utility only argues with those, where an author rule wins outright.
+Utilities on the element asking for the full width get 38px less than it, and
+put every pixel of the shortfall on one side.
 
 The keyboard is the other half. iOS Safari shrinks the *visual* viewport for
 it and leaves the layout viewport alone, and fixed positioning resolves

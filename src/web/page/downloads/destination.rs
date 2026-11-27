@@ -244,7 +244,7 @@ mod tests {
 
     /// The label is shown, not the path: the mount above the root is the same
     /// for every destination, so it would spend the width the tail needs
-    /// (#303). The absolute path is still what is submitted.
+    /// The absolute path is still what is submitted.
     #[test]
     fn the_current_folder_is_shown_from_its_root_and_submitted_whole() {
         let tail = "Static.Tide.1994.Criterion.1080p.BluRay.x265.HEVC.10bit.AAC.5.1";

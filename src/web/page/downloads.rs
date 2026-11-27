@@ -505,7 +505,7 @@ mod tests {
     }
 
     /// The marker comes off a resolving magnet's name, and nothing about the
-    /// row may claim the torrent arrived with its metadata (#372): the
+    /// row may claim the torrent arrived with its metadata: the
     /// metadata pass reaches `Complete` when the torrent file arrives.
     #[test]
     fn a_resolved_metadata_pass_still_reads_as_a_torrent_that_has_not_started() {
@@ -523,7 +523,7 @@ mod tests {
     }
 
     /// The two numbers that answer "will this be done tonight" sit in the
-    /// collapsed row (#308).
+    /// collapsed row.
     #[test]
     fn the_collapsed_row_shows_the_rate_and_the_time_left() {
         let html = draw(&moving());
@@ -668,8 +668,8 @@ mod tests {
         assert!(unfinished.contains("data-ask"), "{unfinished}");
     }
 
-    /// A row offers each control once (#354's merge once nested the block
-    /// inside its own branch and shipped two Pause buttons).
+    /// A row offers each control once, which only counting sees: a block
+    /// nested inside its own branch would ship two Pause buttons.
     #[test]
     fn a_row_offers_each_control_once() {
         for d in [
@@ -692,7 +692,7 @@ mod tests {
     }
 
     /// While aria2 is asked to let go, the row says so and offers nothing to
-    /// press (#316).
+    /// press.
     #[test]
     fn a_row_being_cleared_says_so_and_offers_nothing_to_press() {
         let html = draw_with(&finished(), Vec::new(), true);

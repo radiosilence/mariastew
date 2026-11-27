@@ -1,6 +1,7 @@
 {#- A sheet: pinned to the bottom edge on a phone, where a thumb already is. It closes itself when the server says the
-    batch went in (`$_added`), and closing, by cancel, a tap outside or Escape alike, asks for the sheet fresh, since
-    closing is the moment an attempt is abandoned. The add button sits in the footer, outside the form it sends, so
+    batch went in (`$_added`), and closing, by cancel, a tap outside or Escape alike, empties the form and asks for the sheet fresh, since closing is
+    the moment an attempt is abandoned. The form is reset as well because a morph leaves a typed value alone when the
+    markup's own value did not change. The add button sits in the footer, outside the form it sends, so
     the form names it (`sends`), which also makes Enter in a field press it.
 
     The folder name and its parent belong to `#mkdir-form`, not to `#add-form` they sit inside (`form=` on each): a
@@ -10,7 +11,7 @@
         .close("cancel")
         .action(kit::Button::primary("add").post("/add").sends("add-form"))
         .datastar("effect", "$_added && el.close()")
-        .datastar("on:close", "$_added = false, @get('/add')")
+        .datastar("on:close", "$_added = false, el.querySelector('form').reset(), @get('/add')")
 ) %}
 {% let form = kit::Form::post("/add").id("add-form") %}
 <form {{ form.attrs() }} class="flex flex-col gap-4">

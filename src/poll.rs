@@ -1,9 +1,9 @@
 //! One poll of aria2 for the whole process.
 //!
 //! aria2 has no notification for byte-level progress, so the only way to show
-//! a moving bar is to ask. The asking used to be per open page: every stream
-//! ran its own RPC calls, so the cost of going faster was multiplied by however
-//! many tabs were open, and a phone left on a bedside table cost the same as
+//! a moving bar is to ask. Asked per open page, every stream would run its own
+//! RPC calls, so the cost of going faster would be multiplied by however many
+//! tabs were open, and a phone left on a bedside table would cost the same as
 //! one being watched.
 //!
 //! Here it is one task. The RPC happens once per tick however many pages are

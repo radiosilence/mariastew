@@ -57,7 +57,7 @@ function fillFrom(row: Element, text: string) {
  * `readText()` is gated on transient user activation everywhere and, on iOS,
  * on a Paste bubble Safari draws itself and no page can suppress. Safari
  * anchors its bubble to the touch that asked, so asking from a button beside
- * the field puts the bubble against the field it fills (#353).
+ * the field puts the bubble against the field it fills.
  *
  * Whatever is on the clipboard goes in, magnet or not: a button that answers a
  * tap by doing nothing reads as broken, where a wrong value is visible and
@@ -119,7 +119,7 @@ globalThis.ms = {
  * iOS Safari shrinks the visual viewport for its keyboard and leaves the
  * layout viewport alone. Fixed positioning resolves against the layout one, so
  * the bottom sheet opened underneath the keyboard and Safari scrolled the page
- * chasing the focused field (#353). Nothing in CSS exposes the gap between the
+ * chasing the focused field. Nothing in CSS exposes the gap between the
  * two viewports; this is the only place it can be measured. A browser that
  * resizes its layout viewport for its keyboard measures zero, which is also
  * the stylesheet's fallback.

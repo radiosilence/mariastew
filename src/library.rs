@@ -496,7 +496,7 @@ mod tests {
     /// aria2 refuses `remove` for a download it has already stopped (every
     /// errored row, and any finished torrent it is no longer seeding), so a
     /// removal that started there never reached `removeDownloadResult`, which
-    /// would have worked (#316).
+    /// would have worked.
     #[tokio::test]
     async fn a_download_aria2_has_already_stopped_is_still_discarded() {
         for status in ["complete", "error"] {
