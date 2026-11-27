@@ -1,254 +1,254 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    {# `viewport-fit=cover` is what gives `env(safe-area-inset-*)` a value other
-         than zero. Without it the insets below silently resolve to 0 and the
-         bottom sheet's buttons sit under the home indicator. #}
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">{# For safe-area-insets #}
-    <title>mariastew</title>
-    {% import "icons.html" as icons %}
-    {# The SVG is what every browser here will actually use; the `.ico` is for
-         Windows and for anything that asks before it has parsed this. The
-         apple-touch icon and the manifest pair are drawn full-bleed on purpose —
-         iOS and Android round a home screen icon themselves, and a tile that
-         arrives pre-rounded gets rounded twice (see scripts/gen-app-icons.ts).
-    
-         All of them are served from outside the session layer, along with the
-         stylesheet: the sign-in page needs an icon too, and a manifest is fetched
-         without credentials by default, so one behind the layer would answer the
-         install prompt with a login redirect. #}
-    <link rel="icon" href="{{ crate::asset_url("/assets/favicon.ico") }}" sizes="32x32">
-    <link rel="icon" href="{{ crate::asset_url("/assets/icon.svg") }}" type="image/svg+xml">
-    <link rel="apple-touch-icon" href="{{ crate::asset_url("/assets/apple-touch-icon.png") }}">
-    <link rel="manifest" href="{{ crate::asset_url("/assets/manifest.webmanifest") }}">
-    <meta name="theme-color" content="#1e1e1e" media="(prefers-color-scheme: dark)">
-    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-    <link rel="stylesheet" href="{{ crate::asset_url("/assets/app.css") }}">
-    <script type="module" src="{{ crate::asset_url("/assets/app.js") }}"></script>
-    {# After the app's: module scripts run in document order, and `ms` has to exist
-       before Datastar compiles the expressions that call it. #}
-    <script type="module" src="{{ self.datastar_js_path() }}"></script>
-  </head>
-  {# `$_addStatus` and `$_addMessage` are the whole contract with the server for
-       this form: POST /add answers with a JSON body, which Datastar treats as a
-       signal patch on its own (Content-Type: application/json is all it takes, no
-       SSE framing required). `ok` closes the dialog and confirms; `error` keeps it
-       open and says why.
-  
-       Two flat signals rather than one `$add` object: a nested signal is tracked
-       only through its parent, so a reader of `$add.status` alone does not re-run
-       when the server patches it, and fails silently when it does not. A
-       top-level signal has no parent. `''` rather than `null` because a null in a
-       `data-signals` patch deletes the key rather than setting it.
-  
-       `_addDone` rides along with an error: the magnets of a batch that did go
-       in, whose rows the sheet drops so a retry sends only what is left.
-  
-       `__ifmissing` seeds them without stomping a patch that arrived first.
-  
-       Every signal on this page starts with `_`. Datastar sends all signals
-       with every request unless they are prefixed so, and the server reads
-       none of them; otherwise every `/stream` reconnect would carry each row's
-       indicator signals in its query string. #}
-  <body data-signals__ifmissing="{_addStatus: '', _addMessage: '', _addDone: []}">
-    {# The live stream, opened by askama_datastar's `reopen` on an element of its
-         own, which opens it again once it ends or has been silent for two of the
-         server's heartbeats. A stream can stop without anybody being told: a pod
-         replaced under an open page ends it, and a suspended phone's socket stops
-         carrying bytes while Datastar still believes it live (#386, #390). A 401,
-         a session the deploy ended, is not asked again until the page is shown
-         after being hidden. #}
-    <div hidden{{ self.live() }}></div>
+<head>
+<meta charset="utf-8">
+{# `viewport-fit=cover` is what gives `env(safe-area-inset-*)` a value other
+     than zero. Without it the insets below silently resolve to 0 and the
+     bottom sheet's buttons sit under the home indicator. #}
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">{# For safe-area-insets #}
+<title>mariastew</title>
+{% import "icons.html" as icons %}
+{# The SVG is what every browser here will actually use; the `.ico` is for
+     Windows and for anything that asks before it has parsed this. The
+     apple-touch icon and the manifest pair are drawn full-bleed on purpose —
+     iOS and Android round a home screen icon themselves, and a tile that
+     arrives pre-rounded gets rounded twice (see scripts/gen-app-icons.ts).
 
-    {# The header is the primary action, not a name plus an action — the person
-         already knows what they opened, and the name would only spend the
-         vertical space a phone in portrait can least afford. The label went for
-         the same reason it did: the only control in the header of an app for
-         adding downloads does not need saying twice. It keeps its accessible
-         name in `aria-label` — the icon is `aria-hidden`, so without it the
-         button would announce as nothing at all.
-    
-         Nothing is reset here: closing is what clears an abandoned attempt, and
-         that is the one event every dismissal raises. #}
-    {# A hairline rather than a shadow: the theme is flat. #}
-    <header class="border-b border-rule p-4">
-      <button type="button" class="primary min-h-14 w-full"
-        aria-label="Add download" title="Add download"
-        data-on:click="$_addDialog.showModal()">{% call icons::magnet(class = "text-title") %}{% endcall %}</button>
-    </header>
+     All of them are served from outside the session layer, along with the
+     stylesheet: the sign-in page needs an icon too, and a manifest is fetched
+     without credentials by default, so one behind the layer would answer the
+     install prompt with a login redirect. #}
+<link rel="icon" href="{{ crate::asset_url("/assets/favicon.ico") }}" sizes="32x32">
+<link rel="icon" href="{{ crate::asset_url("/assets/icon.svg") }}" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{{ crate::asset_url("/assets/apple-touch-icon.png") }}">
+<link rel="manifest" href="{{ crate::asset_url("/assets/manifest.webmanifest") }}">
+<meta name="theme-color" content="#1e1e1e" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="{{ crate::asset_url("/assets/app.css") }}">
+<script type="module" src="{{ crate::asset_url("/assets/app.js") }}"></script>
+{# After the app's: module scripts run in document order, and `ms` has to exist
+   before Datastar compiles the expressions that call it. #}
+<script type="module" src="{{ self.datastar_js_path() }}"></script>
+</head>
+{# `$_addStatus` and `$_addMessage` are the whole contract with the server for
+     this form: POST /add answers with a JSON body, which Datastar treats as a
+     signal patch on its own (Content-Type: application/json is all it takes, no
+     SSE framing required). `ok` closes the dialog and confirms; `error` keeps it
+     open and says why.
 
-    {# A bottom sheet, not a centered dialog: pinned to the bottom edge, which is
-         where a thumb already is and where the rest of this UI's controls live.
-         `closedby="any"` is a tap-outside dismiss with
-         no JS — see #257. The one field that matters, the magnet paste, is the
-         first and only thing shown open; the destination is real but secondary,
-         so it starts collapsed behind its own disclosure rather than dumping a
-         directory tree in front of someone who has not pasted anything yet.
-         Its geometry — the insets, the width, the height cap and the room the
-         keyboard needs — is the kit's `.sheet` rather than utilities here,
-         because the user agent has rules of its own about all four and an
-         author rule wins outright where a margin utility only argues (#353).
-         `web/ms.ts` sets the `--keyboard-inset` it reads.
-    
-         `open:flex` rather than `flex`: an unconditional display utility
-         applies while the dialog is closed too, overriding the user agent's
-         `dialog:not([open]) { display: none }` and leaking it into the page. #}
-    {# It closes itself off `$_addStatus` rather than off the fetch, so it does not
-         care whether the answer came back as a plain JSON body or an SSE patch.
-    
-         Reset on close rather than on open. A chosen destination and a half-typed
-         magnet survived Cancel and every tap-outside dismiss, because nothing ever
-         put the dialog back — reopening showed the previous attempt and the only
-         way out was reloading the page. Closing is the moment an attempt is
-         abandoned, and it is the one event every dismissal raises: Cancel's
-         `method="dialog"`, `closedby="any"`, and Escape alike. Re-fetching the
-         picker with no path returns it to the roots.
-    
-         `$_addStatus` is cleared whatever it held. A success used to be left set for
-         the toast to keep reading, which made the toast the only thing that ever
-         cleared it — an `ok` that outlives this dialog is one the next `data-effect`
-         run closes it on. Nothing outside reads it now, so it dies with the
-         attempt. #}
-    <dialog id="add-dialog" closedby="any" data-ref="_addDialog"
-      data-effect="if ($_addStatus === 'ok') el.close(); else if ($_addStatus === 'error') ms.dropMagnets($_magnetRows, $_addDone)"
-      data-on:close="$_addStatus = ''; $_addMessage = ''; ms.resetMagnets($_magnetRows); @get('/browse')"
-      class="sheet open:flex flex-col">
-      <div class="mx-auto mt-3 h-1 w-10 shrink-0 bg-rule sm:hidden"></div>
-      {# `autofocus` on the form, which takes `tabindex="-1"` to be focusable at
-           all. Dropping the attribute from the field did not stop the keyboard:
-           `showModal()` focuses the first focusable descendant when nothing claims
-           it, so the field was still what got focus, just by a longer route.
-           Somewhere has to take it — focus cannot be left outside a modal — and a
-           container is the one thing in here that opens no keyboard, while still
-           being what a screen reader should land on and read out from.
+     Two flat signals rather than one `$add` object: a nested signal is tracked
+     only through its parent, so a reader of `$add.status` alone does not re-run
+     when the server patches it, and fails silently when it does not. A
+     top-level signal has no parent. `''` rather than `null` because a null in a
+     `data-signals` patch deletes the key rather than setting it.
 
-           `flex-auto`, not `flex-1`. The sheet has no height of its own — it hugs
-           what is in it up to a cap — and `flex-1` is `flex-basis: 0`, which in a
-           column with no definite height means this contributes nothing to the
-           height being worked out. Paired with the `min-h-0` that lets it scroll,
-           that is a form measured at zero and a footer sitting on the field: the
-           squashed sheet of #353, which survived the geometry fix because it was
-           never the geometry. `flex-auto` bases the same growing and shrinking on
-           the content instead. #}
-      <form id="add-form" tabindex="-1" autofocus
-        class="flex min-h-0 flex-auto flex-col gap-4 overflow-y-auto overscroll-contain p-4 sm:p-6 focus:outline-none">
-        {# A magnet is a URI and nothing else, so it gets the URI keyboard and none
-             of the text-field helpers: iOS otherwise offered to AutoFill a contact
-             into it, spending a bar of a viewport the keyboard had already
-             halved, and autocapitalise/autocorrect can only corrupt what is typed
-             (#353).
+     `_addDone` rides along with an error: the magnets of a batch that did go
+     in, whose rows the sheet drops so a retry sends only what is left.
 
-             Not what takes focus on open — see the form above. A keyboard on
-             every open costs half the sheet, and the field is filled by the
-             button beside it, so that was half a sheet spent on a keyboard the
-             usual flow never types into. Tapping the field still opens one. #}
-        {# One row per magnet, and every row the same, so a new one is a clone of
-             the first: no attribute on a row is a Datastar one, and the handlers
-             that serve them are delegated from here, the way the picker's are.
-             The remove button hides itself while its row is the only one. #}
-        <div class="flex flex-col gap-2" data-ref="_magnetRows"
-          data-on:click="ms.magnetRowClick(evt)"
-          data-on:paste="ms.pasteMany(evt)"
-          data-on:keydown="ms.clickOnEnter(evt, $_addSubmit)">
-          <div class="group/magnet flex gap-2" data-magnet-row>
-            <input name="magnet" placeholder="paste a magnet link" enterkeyhint="go"
-              inputmode="url" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"
-              class="min-h-14 flex-1">
-            {# Where the clipboard is asked for, and the only place it is. Safari
-                 anchors its Paste bubble to the touch that asked, so asking here
-                 puts it against the field it fills — see `pasteInto` in app.ts. Icon-only
-                 for the same reason the picker's controls are: the word would take
-                 width the magnet needs. #}
-            <button type="button" class="min-h-14 min-w-14 shrink-0" data-action="paste"
-              aria-label="Paste from clipboard" title="Paste from clipboard">{% call icons::clipboard(class = "text-title-sm") %}{% endcall %}</button>
-            <button type="button" class="quiet min-h-14 min-w-14 shrink-0 group-only/magnet:hidden" data-action="remove"
-              aria-label="Remove this magnet" title="Remove this magnet">{% call icons::x(class = "text-title-sm") %}{% endcall %}</button>
-          </div>
-        </div>
-        <button type="button" class="quiet min-h-11 self-start px-0"
-          data-on:click="ms.addMagnetRow($_magnetRows)">{% call icons::plus() %}{% endcall %} another magnet</button>
-        <details class="disclosure border border-rule">
-          <summary class="min-h-11 flex items-center gap-2 p-3">
-            {% call icons::folder() %}{% endcall %}
-            destination <span class="text-muted">— tap to choose</span>
-          </summary>
-          <div class="border-t border-rule p-3">
-            {{ self.picker()?|safe }}
-          </div>
-        </details>
-      </form>
+     `__ifmissing` seeds them without stomping a patch that arrived first.
 
-      {# The picker's folder-name field and its `parent` belong to this, not to
-           `#add-form` they are nested inside — `form=` on each of them says so,
-           which is the one thing that overrides where an input sits in the DOM.
+     Every signal on this page starts with `_`. Datastar sends all signals
+     with every request unless they are prefixed so, and the server reads
+     none of them; otherwise every `/stream` reconnect would carry each row's
+     indicator signals in its query string. #}
+<body data-signals__ifmissing="{_addStatus: '', _addMessage: '', _addDone: []}">
+{# The live stream, opened by askama_datastar's `reopen` on an element of its
+     own, which opens it again once it ends or has been silent for two of the
+     server's heartbeats. A stream can stop without anybody being told: a pod
+     replaced under an open page ends it, and a suspended phone's socket stops
+     carrying bytes while Datastar still believes it live (#386, #390). A 401,
+     a session the deploy ended, is not asked again until the page is shown
+     after being hidden. #}
+<div hidden{{ self.live() }}></div>
 
-           Without it, creating a folder was impossible until a magnet had been
-           pasted: Datastar walks up from the button to the nearest form, and
-           refuses to send one that fails `checkValidity()`, so a constraint on
-           the magnet field two elements above rejected a request that never
-           carried it. A control validating a form it has nothing to do with is
-           the bug; giving it the form it does have to do with is the fix. It also
-           stops a create-folder posting the magnet, which the handler ignored. #}
-      <form id="mkdir-form" hidden></form>
+{# The header is the primary action, not a name plus an action — the person
+     already knows what they opened, and the name would only spend the
+     vertical space a phone in portrait can least afford. The label went for
+     the same reason it did: the only control in the header of an app for
+     adding downloads does not need saying twice. It keeps its accessible
+     name in `aria-label` — the icon is `aria-hidden`, so without it the
+     button would announce as nothing at all.
 
-      {# A 400 (magnets only, destination outside a root, magnet never resolved)
-           used to do nothing visible at all — indistinguishable from the dialog
-           just not working. Same contract as success, so it needs nothing from the
-           server beyond the message it already computed for the plain-text body.
+     Nothing is reset here: closing is what clears an abandoned attempt, and
+     that is the one event every dismissal raises. #}
+{# A hairline rather than a shadow: the theme is flat. #}
+<header class="border-b border-rule p-4">
+  <button type="button" class="primary min-h-14 w-full"
+    aria-label="Add download" title="Add download"
+    data-on:click="$_addDialog.showModal()">{% call icons::magnet(class="text-title") %}{% endcall %}</button>
+</header>
 
-           The icon is a sibling of the message, not inside it: `data-text` replaces
-           the element's whole content, so anything nested in the same element is
-           gone the first time an error arrives. #}
-      <p class="notice bad mx-4 my-0 shrink-0 flex-nowrap"
-        data-show="$_addStatus === 'error'">
-        {% call icons::triangle_alert() %}{% endcall %}
-        <span data-text="$_addMessage"></span>
-      </p>
+{# A bottom sheet, not a centered dialog: pinned to the bottom edge, which is
+     where a thumb already is and where the rest of this UI's controls live.
+     `closedby="any"` is a tap-outside dismiss with
+     no JS — see #257. The one field that matters, the magnet paste, is the
+     first and only thing shown open; the destination is real but secondary,
+     so it starts collapsed behind its own disclosure rather than dumping a
+     directory tree in front of someone who has not pasted anything yet.
+     Its geometry — the insets, the width, the height cap and the room the
+     keyboard needs — is the kit's `.sheet` rather than utilities here,
+     because the user agent has rules of its own about all four and an
+     author rule wins outright where a margin utility only argues (#353).
+     `web/ms.ts` sets the `--keyboard-inset` it reads.
 
-      {# The kit's `.sheet` pads its own bottom edge clear of the home indicator
-           on gesture phones, so the footer keeps only its own padding.
+     `open:flex` rather than `flex`: an unconditional display utility
+     applies while the dialog is closed too, overriding the user agent's
+     `dialog:not([open]) { display: none }` and leaking it into the page. #}
+{# It closes itself off `$_addStatus` rather than off the fetch, so it does not
+     care whether the answer came back as a plain JSON body or an SSE patch.
 
-           `shrink-0` on this and on the error above it: they are flex items beside
-           a `flex-1` form, so they shrink by default, and a sheet short of room —
-           every sheet, while the keyboard was taking most of it — squeezed the
-           footer into the field rather than scrolling the form (#353). #}
-      <div class="flex shrink-0 gap-2 border-t border-rule p-4">
-        <form method="dialog" class="flex flex-1">
-          <button class="quiet min-h-12 w-full">cancel</button>
-        </form>
-        {# `selector` because this button lives outside #add-form — pinned in
-             the footer rather than scrolling away with it — so Datastar is told
-             explicitly which form to serialize instead of walking up from here
-             and finding none.
+     Reset on close rather than on open. A chosen destination and a half-typed
+     magnet survived Cancel and every tap-outside dismiss, because nothing ever
+     put the dialog back — reopening showed the previous attempt and the only
+     way out was reloading the page. Closing is the moment an attempt is
+     abandoned, and it is the one event every dismissal raises: Cancel's
+     `method="dialog"`, `closedby="any"`, and Escape alike. Re-fetching the
+     picker with no path returns it to the roots.
 
-             data-indicator sets $_adding for exactly the request's duration, which
-             is what drives both the disabled state (a second tap while the first is
-             still in flight is how the owner's retries piled up duplicate "already
-             registered" errors) and the label. The signals are cleared before
-             firing so a stale error from a previous attempt does not linger through
-             a fresh one. #}
-        <button type="button" id="add-submit" class="min-h-12 flex-[2] fill"
-          data-ref="_addSubmit" data-indicator="_adding" data-attr:disabled="$_adding"
-          data-on:click="$_addStatus = ''; $_addMessage = ''; @post('/add', {contentType: 'form', selector: '#add-form'})">
-          <span data-show="$_adding" class="spinner"></span>
-          <span data-text="$_adding ? 'adding…' : 'add'"></span>
-        </button>
+     `$_addStatus` is cleared whatever it held. A success used to be left set for
+     the toast to keep reading, which made the toast the only thing that ever
+     cleared it — an `ok` that outlives this dialog is one the next `data-effect`
+     run closes it on. Nothing outside reads it now, so it dies with the
+     attempt. #}
+<dialog id="add-dialog" closedby="any" data-ref="_addDialog"
+  data-effect="if ($_addStatus === 'ok') el.close(); else if ($_addStatus === 'error') ms.dropMagnets($_magnetRows, $_addDone)"
+  data-on:close="$_addStatus = ''; $_addMessage = ''; ms.resetMagnets($_magnetRows); @get('/browse')"
+  class="sheet open:flex flex-col">
+  <div class="mx-auto mt-3 h-1 w-10 shrink-0 bg-rule sm:hidden"></div>
+  {# `autofocus` on the form, which takes `tabindex="-1"` to be focusable at
+       all. Dropping the attribute from the field did not stop the keyboard:
+       `showModal()` focuses the first focusable descendant when nothing claims
+       it, so the field was still what got focus, just by a longer route.
+       Somewhere has to take it — focus cannot be left outside a modal — and a
+       container is the one thing in here that opens no keyboard, while still
+       being what a screen reader should land on and read out from.
+
+       `flex-auto`, not `flex-1`. The sheet has no height of its own — it hugs
+       what is in it up to a cap — and `flex-1` is `flex-basis: 0`, which in a
+       column with no definite height means this contributes nothing to the
+       height being worked out. Paired with the `min-h-0` that lets it scroll,
+       that is a form measured at zero and a footer sitting on the field: the
+       squashed sheet of #353, which survived the geometry fix because it was
+       never the geometry. `flex-auto` bases the same growing and shrinking on
+       the content instead. #}
+  <form id="add-form" tabindex="-1" autofocus
+    class="flex min-h-0 flex-auto flex-col gap-4 overflow-y-auto overscroll-contain p-4 sm:p-6 focus:outline-none">
+    {# A magnet is a URI and nothing else, so it gets the URI keyboard and none
+         of the text-field helpers: iOS otherwise offered to AutoFill a contact
+         into it, spending a bar of a viewport the keyboard had already
+         halved, and autocapitalise/autocorrect can only corrupt what is typed
+         (#353).
+
+         Not what takes focus on open — see the form above. A keyboard on
+         every open costs half the sheet, and the field is filled by the
+         button beside it, so that was half a sheet spent on a keyboard the
+         usual flow never types into. Tapping the field still opens one. #}
+    {# One row per magnet, and every row the same, so a new one is a clone of
+         the first: no attribute on a row is a Datastar one, and the handlers
+         that serve them are delegated from here, the way the picker's are.
+         The remove button hides itself while its row is the only one. #}
+    <div class="flex flex-col gap-2" data-ref="_magnetRows"
+      data-on:click="ms.magnetRowClick(evt)"
+      data-on:paste="ms.pasteMany(evt)"
+      data-on:keydown="ms.clickOnEnter(evt, $_addSubmit)">
+      <div class="group/magnet flex gap-2" data-magnet-row>
+        <input name="magnet" placeholder="paste a magnet link" enterkeyhint="go"
+          inputmode="url" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false"
+          class="min-h-14 flex-1">
+        {# Where the clipboard is asked for, and the only place it is. Safari
+             anchors its Paste bubble to the touch that asked, so asking here
+             puts it against the field it fills — see `pasteInto` in app.ts. Icon-only
+             for the same reason the picker's controls are: the word would take
+             width the magnet needs. #}
+        <button type="button" class="min-h-14 min-w-14 shrink-0" data-action="paste"
+          aria-label="Paste from clipboard" title="Paste from clipboard">{% call icons::clipboard(class="text-title-sm") %}{% endcall %}</button>
+        <button type="button" class="quiet min-h-14 min-w-14 shrink-0 group-only/magnet:hidden" data-action="remove"
+          aria-label="Remove this magnet" title="Remove this magnet">{% call icons::x(class="text-title-sm") %}{% endcall %}</button>
       </div>
-    </dialog>
+    </div>
+    <button type="button" class="quiet min-h-11 self-start px-0"
+      data-on:click="ms.addMagnetRow($_magnetRows)">{% call icons::plus() %}{% endcall %} another magnet</button>
+    <details class="disclosure border border-rule">
+      <summary class="min-h-11 flex items-center gap-2 p-3">
+        {% call icons::folder() %}{% endcall %}
+        destination <span class="text-muted">— tap to choose</span>
+      </summary>
+      <div class="border-t border-rule p-3">
+        {{ self.picker()?|safe }}
+      </div>
+    </details>
+  </form>
 
-    <main class="mx-auto max-w-2xl">
-      {% include "downloads.html" %}
-    </main>
+  {# The picker's folder-name field and its `parent` belong to this, not to
+       `#add-form` they are nested inside — `form=` on each of them says so,
+       which is the one thing that overrides where an input sits in the DOM.
 
-    {# Below the list, which is the one place on this page that costs nothing:
-         the header is a single control by design and the bottom edge is where a
-         version is looked for. It clears the home indicator for the same reason
-         the dialog's footer does — it is the last element on the page, so on a
-         phone with a gesture bar it would otherwise sit under it. #}
-    <footer class="pb-[max(1rem,env(safe-area-inset-bottom))] text-center text-fine text-muted">
-      v{{ self.version() }}
-    </footer>
+       Without it, creating a folder was impossible until a magnet had been
+       pasted: Datastar walks up from the button to the nearest form, and
+       refuses to send one that fails `checkValidity()`, so a constraint on
+       the magnet field two elements above rejected a request that never
+       carried it. A control validating a form it has nothing to do with is
+       the bug; giving it the form it does have to do with is the fix. It also
+       stops a create-folder posting the magnet, which the handler ignored. #}
+  <form id="mkdir-form" hidden></form>
 
-  </body>
+  {# A 400 (magnets only, destination outside a root, magnet never resolved)
+       used to do nothing visible at all — indistinguishable from the dialog
+       just not working. Same contract as success, so it needs nothing from the
+       server beyond the message it already computed for the plain-text body.
+
+       The icon is a sibling of the message, not inside it: `data-text` replaces
+       the element's whole content, so anything nested in the same element is
+       gone the first time an error arrives. #}
+  <p class="notice bad mx-4 my-0 shrink-0 flex-nowrap"
+    data-show="$_addStatus === 'error'">
+    {% call icons::triangle_alert() %}{% endcall %}
+    <span data-text="$_addMessage"></span>
+  </p>
+
+  {# The kit's `.sheet` pads its own bottom edge clear of the home indicator
+       on gesture phones, so the footer keeps only its own padding.
+
+       `shrink-0` on this and on the error above it: they are flex items beside
+       a `flex-1` form, so they shrink by default, and a sheet short of room —
+       every sheet, while the keyboard was taking most of it — squeezed the
+       footer into the field rather than scrolling the form (#353). #}
+  <div class="flex shrink-0 gap-2 border-t border-rule p-4">
+    <form method="dialog" class="flex flex-1">
+      <button class="quiet min-h-12 w-full">cancel</button>
+    </form>
+    {# `selector` because this button lives outside #add-form — pinned in
+         the footer rather than scrolling away with it — so Datastar is told
+         explicitly which form to serialize instead of walking up from here
+         and finding none.
+
+         data-indicator sets $_adding for exactly the request's duration, which
+         is what drives both the disabled state (a second tap while the first is
+         still in flight is how the owner's retries piled up duplicate "already
+         registered" errors) and the label. The signals are cleared before
+         firing so a stale error from a previous attempt does not linger through
+         a fresh one. #}
+    <button type="button" id="add-submit" class="min-h-12 flex-[2] fill"
+      data-ref="_addSubmit" data-indicator="_adding" data-attr:disabled="$_adding"
+      data-on:click="$_addStatus = ''; $_addMessage = ''; @post('/add', {contentType: 'form', selector: '#add-form'})">
+      <span data-show="$_adding" class="spinner"></span>
+      <span data-text="$_adding ? 'adding…' : 'add'"></span>
+    </button>
+  </div>
+</dialog>
+
+<main class="mx-auto max-w-2xl">
+{% include "downloads.html" %}
+</main>
+
+{# Below the list, which is the one place on this page that costs nothing:
+     the header is a single control by design and the bottom edge is where a
+     version is looked for. It clears the home indicator for the same reason
+     the dialog's footer does — it is the last element on the page, so on a
+     phone with a gesture bar it would otherwise sit under it. #}
+<footer class="pb-[max(1rem,env(safe-area-inset-bottom))] text-center text-fine text-muted">
+  v{{ self.version() }}
+</footer>
+
+</body>
 </html>
