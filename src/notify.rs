@@ -19,7 +19,7 @@ use std::collections::HashMap;
 
 use askama::Template;
 
-use crate::aria2::{Download, Health, Status};
+use crate::aria2::{Health, Status};
 use crate::library;
 use crate::state::AppState;
 
@@ -190,6 +190,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+    use crate::aria2::{Download, File};
     use crate::config::{Config, Root};
 
     fn download(dir: &std::path::Path, files: Vec<File>) -> Download {
