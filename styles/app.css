@@ -67,8 +67,8 @@
   }
 }
 
-/* A sheet that loads has no form for its actions to send until its body arrives, so they take no presses meanwhile. */
+/* A sheet that loads has no form for its actions to send until its body arrives, so they are hidden meanwhile: hidden
+ * rather than inert to the pointer alone, since a hidden button cannot be reached by Tab either. */
 dialog.sheet > section:empty ~ footer > * {
-  pointer-events: none;
-  opacity: 0.5;
+  visibility: hidden;
 }

@@ -47,7 +47,8 @@ plain text with the URL keyboard rather than `type="url"`, so the browser's
 own validation never answers before `/add`'s row-numbered one.
 
 While the sheet reads its body the form it sends is not there yet, so its
-footer buttons take no presses until the body arrives (`styles/app.css`).
+footer buttons are hidden, to the pointer and to Tab alike, until the body
+arrives (`styles/app.css`).
 
 `/add` takes the batch whole for validation and one magnet at a time for
 aria2: a bad row refuses everything, since nothing has been added yet and that
