@@ -160,21 +160,9 @@ pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Respon
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aria2::Aria2;
-    use crate::config::Config;
 
     fn state() -> AppState {
-        AppState {
-            config: std::sync::Arc::new(Config::fixture()),
-            activity: crate::activity::Activity::new(),
-            clearing: crate::state::Clearing::default(),
-            adding: Default::default(),
-            preexisting: Default::default(),
-            aria2: Aria2::new(String::new(), reqwest::Client::new()),
-            sessions: crate::auth::session::Sessions::new(),
-            poll: crate::poll::Poll::new(),
-            http: reqwest::Client::new(),
-        }
+        AppState::fixture(String::new())
     }
 
     /// The one behaviour this route exists for: a request with no OIDC round

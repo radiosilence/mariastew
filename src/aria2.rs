@@ -103,19 +103,16 @@ impl FromStr for Status {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Health {
     /// Behind `maxConcurrentDownloads`. Nothing is wrong and nothing is
-    /// happening — which is the one thing the old catch-all could not say,
-    /// so a queued torrent read as "no seeders" and looked broken.
+    /// happening, which "no seeders" would wrongly suggest.
     Queued,
     /// The magnet has not resolved: aria2 is looking for peers who will serve
     /// the torrent file, and asking whichever it finds.
     ///
-    /// This was briefly split in two on `connections > 0`, on the theory that
-    /// peers connected meant metadata was on its way. Watching a real dead
-    /// magnet disproved it — DHT hands out peers that have never heard of the
-    /// infohash, so the count oscillates between zero and a handful every few
-    /// seconds while nothing whatsoever arrives. The split named that
-    /// oscillation "progress", and flapped the badge and the activity log
-    /// along with it. Nothing in a single `tellStatus` separates a magnet
+    /// It is not split on `connections > 0`: DHT hands out peers that have
+    /// never heard of the infohash, so on a dead magnet the count oscillates
+    /// between zero and a handful every few seconds while nothing arrives,
+    /// and a split would flap the badge and the activity log with it.
+    /// Nothing in a single `tellStatus` separates a magnet
     /// nobody has from one that is merely slow; what separates them is how
     /// long it has been, which is what the timestamps in the log are for.
     Resolving,
@@ -139,6 +136,34 @@ pub enum Health {
     /// "active" to aria2 — but it is watchable, which is what the row means.
     Complete,
     Errored,
+}
+
+impl Health {
+    /// The word for it, in the terms of the thing being waited for rather than
+    /// the swarm: the row shows it beside the bar and the activity log records
+    /// a change in it, so the two never use different words for one fact.
+    ///
+    /// `Complete` says "downloaded" rather than "ready": "ready" names a state
+    /// of the app, something prepared and waiting to be started, when what it
+    /// reports is that the file has arrived. The three waits before the first
+    /// byte (an unresolved magnet, one queued behind
+    /// `maxConcurrentDownloads`, a resumed one being hash-checked) each say
+    /// which they are, since each has a different answer to "should I wait or
+    /// fix this".
+    pub fn word(self) -> &'static str {
+        match self {
+            Health::Moving => "downloading",
+            Health::Complete => "downloaded",
+            Health::Choked => "stalled",
+            Health::Blocked => "can't connect",
+            Health::Errored => "failed",
+            Health::Dead => "no seeders",
+            Health::Queued => "queued",
+            Health::Resolving => "finding peers",
+            Health::Verifying => "checking files",
+            Health::Paused => "paused",
+        }
+    }
 }
 
 /// aria2's numeric reason for stopping, in words.
@@ -758,6 +783,23 @@ impl Aria2 {
         ])
     }
 
+    /// Every download worth showing, running before queued before finished or
+    /// errored: the order the page draws them in and the poller publishes.
+    ///
+    /// Only the stopped list is swept for metadata passes. Every magnet
+    /// resolves under a gid of its own before `follow-torrent` spawns the real
+    /// download (see `add::finish`), and aria2 names that gid
+    /// `[METADATA]<name>`. While it is active or waiting it is the only
+    /// evidence the add exists, so it is exactly the row that should be on
+    /// screen; once the real download exists it moves to the stopped list and
+    /// is replaced rather than duplicated.
+    pub async fn downloads(&self) -> AppResult<Vec<Download>> {
+        let [mut downloads, waiting, stopped] = self.tell_all().await?;
+        downloads.extend(waiting);
+        downloads.extend(stopped.into_iter().filter(|d| !d.is_metadata()));
+        Ok(downloads)
+    }
+
     pub async fn pause(&self, gid: &str) -> AppResult<()> {
         self.call::<String>("aria2.pause", serde_json::json!([gid]))
             .await?;
@@ -1024,11 +1066,10 @@ mod tests {
         assert_eq!(d.health(), Health::Verifying);
     }
 
-    /// The case the check matters most in, and the one it used to answer for
-    /// last. aria2 counts every piece in the control file as complete before
-    /// it starts hashing them, so a restored seeding torrent reads as fully
-    /// downloaded for the whole check — and `is_finished` above said
-    /// "downloaded" through the longest wait a deploy has.
+    /// The case the check matters most in. aria2 counts every piece in the
+    /// control file as complete before it starts hashing them, so a restored
+    /// seeding torrent reads as fully downloaded for the whole check, which is
+    /// the longest wait a deploy has.
     #[test]
     fn health_verifying_outranks_a_completion_aria2_has_not_rechecked_yet() {
         let mut d = download(Status::Active);
@@ -1171,8 +1212,8 @@ mod tests {
     /// a `select-file` selection, so `total_length`/`completed_length` stay
     /// the whole torrent's numbers even once every selected file has fully
     /// arrived. A 4K release with a finished film and two never-downloaded
-    /// deselected bytes-worth of junk would sit at "not finished" forever
-    /// under the old aggregate-only check.
+    /// deselected bytes-worth of junk would otherwise sit at "not finished"
+    /// forever.
     #[test]
     fn is_finished_when_every_selected_file_is_even_though_deselected_ones_are_not() {
         let mut d = download(Status::Active);
@@ -1243,13 +1284,11 @@ mod tests {
         d
     }
 
-    /// The dance in #372, in one assertion each. A metadata pass reaches
-    /// `Complete` when the torrent *file* arrives, and every reading below
-    /// was answering as though the torrent had: the badge went green and
-    /// said "downloaded", `notify`'s watcher — whose terminal test is this
-    /// same `is_finished` — sent Telegram a finished message and swept a
-    /// directory nothing had been written to, and then the real download
-    /// started, which is the part that was never in doubt.
+    /// A metadata pass reaches `Complete` when the torrent *file* arrives,
+    /// and none of the readings below may answer as though the torrent had:
+    /// the badge would go green and say "downloaded", and `notify`'s watcher,
+    /// whose terminal test is this same `is_finished`, would announce a
+    /// finished download and sweep a directory nothing had been written to.
     #[test]
     fn a_resolved_metadata_pass_is_not_a_finished_torrent() {
         let d = resolved_metadata_pass();
@@ -1279,8 +1318,8 @@ mod tests {
     }
 
     /// An unresolved magnet has a real download speed and no size to spend it
-    /// against, which used to divide out to "0s left" beside a torrent that
-    /// had not started.
+    /// against, so dividing one by the other would show "0s left" beside a
+    /// torrent that has not started.
     #[test]
     fn no_eta_before_the_size_is_known() {
         let mut d = download(Status::Active);
@@ -1304,5 +1343,75 @@ mod tests {
 
         d.bittorrent_name = Some("Show S01".to_string());
         assert_eq!(d.name(), "Show S01");
+    }
+
+    /// The stopped list is read from its newest end, so what just finished is
+    /// always in it, and handed on in aria2's own oldest-first order.
+    #[tokio::test]
+    async fn the_stopped_list_is_read_newest_first_and_shown_oldest_first() {
+        async fn rpc(
+            axum::Json(body): axum::Json<serde_json::Value>,
+        ) -> axum::Json<serde_json::Value> {
+            let stopped = |gid: &str| serde_json::json!({"gid": gid, "status": "complete", "dir": "/d", "files": []});
+            let results: Vec<_> = body["params"][0]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|call| match call["methodName"].as_str().unwrap() {
+                    "aria2.tellStopped" => {
+                        assert_eq!(call["params"][0], -1, "read from the oldest end");
+                        serde_json::json!([[stopped("newest"), stopped("older")]])
+                    }
+                    _ => serde_json::json!([[]]),
+                })
+                .collect();
+            axum::Json(serde_json::json!({"jsonrpc": "2.0", "id": "mariastew", "result": results}))
+        }
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                axum::Router::new().route("/", axum::routing::post(rpc)),
+            )
+            .await
+            .unwrap()
+        });
+
+        let downloads = Aria2::new(url, reqwest::Client::new())
+            .downloads()
+            .await
+            .unwrap();
+        assert_eq!(
+            downloads.iter().map(|d| d.gid.as_str()).collect::<Vec<_>>(),
+            ["older", "newest"]
+        );
+    }
+
+    /// aria2 marks the metadata-only pass with this literal prefix for as
+    /// long as it exists.
+    #[test]
+    fn metadata_only_rows_are_recognised_by_name_and_real_ones_are_not() {
+        let metadata = Download {
+            status: Status::Complete,
+            bittorrent_name: Some("[METADATA]Some.Show.S01".to_string()),
+            ..Download::fixture()
+        };
+        assert!(metadata.is_metadata());
+
+        let real = Download {
+            bittorrent_name: Some("Some.Show.S01".to_string()),
+            ..metadata
+        };
+        assert!(!real.is_metadata());
+    }
+
+    /// Each wait before the first byte has a different answer to "should I
+    /// wait or fix this", so each says which it is.
+    #[test]
+    fn each_wait_before_the_first_byte_says_which_it_is() {
+        assert_eq!(Health::Resolving.word(), "finding peers");
+        assert_eq!(Health::Queued.word(), "queued");
+        assert_eq!(Health::Verifying.word(), "checking files");
     }
 }

@@ -75,8 +75,7 @@ this client also holds a secret; it costs one hash and removes the class of
 attack where a leaked authorization code alone is enough.
 
 `auth::extract::require_session` wraps the entire protected router as one
-layer (`src/routes.rs`'s `router()`, mounted under it in `src/main.rs`)
-rather than being applied per route. aria2's RPC has no auth of its own, so
+layer (`web::router` in `src/web.rs`) rather than being applied per route. aria2's RPC has no auth of its own, so
 any route that reached it without going through this layer would be full
 control of the download queue and write access to the media tree — wrapping
 the whole router means a route added later is protected by construction
@@ -85,18 +84,21 @@ rather than by remembering to decorate it.
 ## Routes
 
 Everything below `/` requires a session; `/healthz`, the `/assets/*`
-files, and `/auth/*` are the only routes outside that layer (`src/main.rs`).
+files, and `/auth/*` are the only routes outside that layer. All of them are
+declared in one place, `web::router`; [ARCHITECTURE.md](ARCHITECTURE.md)
+describes how the page, its stream and its actions are put together.
 
 | Route | Method | What |
 |---|---|---|
-| `/` | GET | The page: current roots and the download list |
-| `/stream` | GET | SSE stream, patching rows in place at the poll rate. see [docs/design.md](docs/design.md) |
-| `/add` | POST | `magnet` + `dir` form fields — validates and starts the magnet resolving, then returns `202` immediately; the poll, the filter, and applying the selection run detached (see `routes::finish_add`), and their outcome shows up through `/stream` like any other download |
+| `/` | GET | The page: the add sheet and the download list, whole, or in place for a Datastar request |
+| `/stream/downloads` | GET | SSE stream, sending each download that changed and the list when one arrives or leaves. See [docs/design.md](docs/design.md) |
+| `/add` | GET | The add sheet's regions as a fresh sheet has them, asked for when it closes |
+| `/add` | POST | `magnet` (repeated) + `dir` form fields: validates the batch and starts each magnet resolving; the poll, the filter and applying the selection run detached (`add::start`), and their outcome shows up through the stream |
 | `/downloads/{gid}/pause` | POST | |
 | `/downloads/{gid}/resume` | POST | |
-| `/downloads/{gid}/remove` | POST | Marks the row `clearing` and returns `204` immediately; the removal itself runs detached (`routes::clear`) and its outcome shows up through `/stream`. see [docs/design.md](docs/design.md) |
-| `/browse` | GET | `path` query param — lists subdirectories of a configured root, for the destination picker |
-| `/mkdir` | POST | `parent` + `name` form fields — makes a directory and returns the picker rooted there |
+| `/downloads/{gid}/remove` | POST | Marks the row `clearing`, waits for aria2 to let go, and deletes what an unfinished download wrote (`library::remove`). See [docs/design.md](docs/design.md) |
+| `/browse` | GET | `path` query param: the destination picker at a folder inside a configured root, or at the roots |
+| `/mkdir` | POST | `parent` + `name` form fields: makes a folder and answers with the picker inside it |
 | `/healthz` | GET | Kubelet probe, no auth |
 | `/auth/login`, `/auth/callback`, `/auth/logout` | GET | The OIDC round trip |
 

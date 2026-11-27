@@ -1,27 +1,23 @@
 # mariastew
 
-# Install the Node packages, the shared theme (@radiosilence/koan-kit-web) among them, writing the registry token first if
-# missing.
-theme:
-    @test -s .npmrc.auth || just auth
+# Install the Node packages: Tailwind, the bundler and the linters.
+node:
     aube install --frozen-lockfile
 
-# Write the GitHub Packages token .npmrc reads: GH_TOKEN in CI, the gh login otherwise. A token in .npmrc itself would
-# be an ${ENV} aube refuses to expand in a project's auth settings.
-auth:
+# Point styles/kit at koan-kit-web's source, the version Cargo.lock names, so the stylesheet is compiled from the same kit
+# release as the markup its components write. The link is gitignored.
+kit:
     #!/usr/bin/env bash
     set -euo pipefail
-    token="${GH_TOKEN:-$(gh auth token 2>/dev/null || true)}"
-    [ -n "$token" ] || { echo "no GitHub token: run 'gh auth login', or set GH_TOKEN" >&2; exit 1; }
-    printf '//npm.pkg.github.com/:_authToken=%s\n' "$token" > .npmrc.auth
+    manifest=$(cargo metadata --format-version 1 --locked | python3 -c 'import json, sys; print(next(p["manifest_path"] for p in json.load(sys.stdin)["packages"] if p["name"] == "koan-kit-web"))')
+    ln -sfn "$(dirname "$manifest")" styles/kit
 
-# Check the markup against the kōan web kit, compile styles/ into assets/app.css and copy the theme's typeface beside it,
-# where the stylesheet's relative font URL points. Both outputs are committed because the server embeds them; CI fails a
-# build where either is stale, or where a template or the Rust that writes markup uses a class outside the kit.
-css: theme
-    node node_modules/@radiosilence/koan-kit-web/kit-check.mjs templates src web
+# Check the markup against the kōan web kit and compile styles/ into assets/app.css. The output is committed because the
+# server embeds it; CI fails a build where it is stale, or where a template or the Rust that writes markup uses a class
+# outside the kit.
+css: node kit
+    node styles/kit/kit-check.mjs templates src web
     ./node_modules/.bin/tailwindcss --input styles/app.css --output assets/app.css --minify
-    cp node_modules/@radiosilence/koan-kit-web/geist-mono.woff2 assets/geist-mono.woff2
 
 # Write CHANGELOG.md from the fragments in changelog.d/. `--stdout` prints it instead.
 changelog *args:

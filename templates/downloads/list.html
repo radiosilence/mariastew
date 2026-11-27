@@ -1,0 +1,13 @@
+{#- The warning lives in here rather than beside the header because it is a statement about the list, and the list is
+    what is sent again when that changes. #}
+<section id="downloads" class="flex flex-col p-4" aria-label="downloads">
+  {%- if unreachable %}
+  {{ kit::Notice::warn("the download service is unreachable — the list will fill in when it answers.").icon(kit::icon::WARNING) }}
+  {%- else if downloads.is_empty() %}
+  {{ kit::Empty::new("nothing downloading").detail("add a magnet link with the button above to start one.").icon(kit::icon::DOWNLOAD) }}
+  {%- else %}
+  {%- for download in downloads %}
+  {{ download }}
+  {%- endfor %}
+  {%- endif %}
+</section>

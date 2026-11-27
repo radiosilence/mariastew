@@ -1,0 +1,92 @@
+{#- One download. Collapsed, it answers "how is it going": name, state, bar, destination, and the rate and time left
+    while anything moves. Open, it answers "what is aria2 doing". It keeps its `open` across a morph, so an open panel
+    goes on updating in place. #}
+{% filter kit::wrap(kit::Disclosure::new("").id(self.id()).datastar("preserve-attr", "open").class("border-b border-rule")) %}
+<summary class="flex min-h-14 items-center gap-3 py-3">
+  <div class="min-w-0 flex-1">
+    <div class="flex items-baseline justify-between gap-2">
+      <span class="truncate text-control text-strong">{{ name }}</span>
+      {{ self.status() }}
+    </div>
+    {{ self.meter() }}
+    <div class="mt-1.5 flex items-baseline justify-between gap-2 text-fine">
+      <p class="my-0 min-w-0 break-words text-muted">{{ kit::icon::FOLDER.svg(12) }} {{ dir }}</p>
+      {%- if let Some(down) = down %}
+      <span class="shrink-0 tabular-nums">{{ kit::icon::ARROW_DOWN.svg(12).label("download rate") }} {{ down }}{% if let Some(eta) = eta %} · {{ eta }} left{% endif %}</span>
+      {%- endif %}
+    </div>
+  </div>
+</summary>
+<div class="flex flex-col gap-3 pb-4">
+  {{ self.readings() }}
+  {%- if pieces.is_some() || info_hash.is_some() %}
+  <div class="break-all text-fine text-muted">
+    {%- if let Some(pieces) = pieces %}<p class="my-0">{{ pieces }}</p>{% endif %}
+    {%- if let Some(hash) = info_hash %}<p class="my-0">{{ hash }}</p>{% endif %}
+  </div>
+  {%- endif %}
+  {%- if !files.is_empty() %}
+  {% filter kit::wrap(kit::Disclosure::new("").id(self.files_id()).datastar("preserve-attr", "open")) %}
+  <summary class="text-fine">files <span class="text-muted">— keeping {{ selected_count }} of {{ file_count }}{% if let Some(skipped) = skipped %}, {{ skipped }}{% endif %}</span></summary>
+  <ul class="flex flex-col gap-2 text-fine">
+    {%- for file in files %}
+    <li{% if !file.selected %} class="opacity-40"{% endif %}>
+      <div class="flex items-baseline justify-between gap-2">
+        <span class="break-words">{{ file.name }}</span>
+        <span class="shrink-0 text-muted">{% if file.selected %}{{ file.size }}{% else %}skipped{% endif %}</span>
+      </div>
+      {%- if let Some(percent) = file.percent %}
+      {{ self.file_meter(percent) }}
+      {%- endif %}
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- if file_count > files.len() %}
+  <p class="my-0 text-fine text-muted">…and {{ file_count - files.len() }} more</p>
+  {%- endif %}
+  {% endfilter %}
+  {%- endif %}
+  {%- if !log.is_empty() %}
+  {#- What happened while adding it, which aria2 has no record of. The time is UTC in the markup and the reader's own
+      zone once the browser rewrites it from `data-at`. #}
+  {% filter kit::wrap(kit::Disclosure::new("").id(self.log_id()).datastar("preserve-attr", "open")) %}
+  <summary class="text-fine">logs <span class="text-muted">— {{ log.len() }} entries</span></summary>
+  <ol class="flex flex-col gap-1 text-fine">
+    {%- for line in log %}
+    <li class="flex gap-2">
+      <span class="w-16 shrink-0 text-right tabular-nums text-muted" data-at="{{ line.at_ms }}" data-text="new Date(+el.dataset.at).toLocaleTimeString([], {hour12: false})">{{ line.utc }}</span>
+      <span class="break-words">{{ line.message }}</span>
+    </li>
+    {%- endfor %}
+  </ol>
+  {% endfilter %}
+  {%- endif %}
+  {%- if error.is_some() || error_code.is_some() %}
+  {% filter kit::wrap(kit::Notice::bad("").icon(kit::icon::ERROR).class("text-fine break-words")) %}
+  {%- if let Some(e) = error %}<p class="my-0">{{ e }}</p>{% endif %}
+  {%- if let Some(code) = error_code %}<p class="my-0">{{ code }}</p>{% endif %}
+  <p class="mt-1 mb-0 text-muted">gid {{ gid }}</p>
+  <p class="my-0 text-muted">dir {{ dir }}</p>
+  {% endfilter %}
+  {%- endif %}
+  {#- "clear" on a finished row takes it off the list and keeps the files; on an unfinished row the same slot deletes
+      what it wrote, so it says both halves and asks first. One busy group per download, so pressing one disables the
+      other and the status turns while either runs. #}
+  <div class="flex gap-2">
+    {%- if clearing %}
+    {{ kit::Button::bordered("clearing").busy(true).class("flex-1") }}
+    {%- else %}
+    {%- if paused %}
+    {{ kit::Button::bordered("resume").icon(kit::icon::PLAY).busy_key(gid).post(self.url("resume")).class("flex-1") }}
+    {%- else %}
+    {{ kit::Button::bordered("pause").icon(kit::icon::PAUSE).busy_key(gid).post(self.url("pause")).class("flex-1") }}
+    {%- endif %}
+    {%- if finished %}
+    {{ kit::Button::bordered("clear").icon(kit::icon::CHECK).busy_key(gid).post(self.url("remove")).class("flex-1") }}
+    {%- else %}
+    {{ kit::Button::bordered("cancel & delete").bad().icon(kit::icon::TRASH).busy_key(gid).post(self.url("remove")).confirm("cancel this download and delete what it has written?", "cancel & delete").class("flex-1") }}
+    {%- endif %}
+    {%- endif %}
+  </div>
+</div>
+{% endfilter %}
