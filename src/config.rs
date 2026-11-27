@@ -46,6 +46,9 @@ pub struct Config {
     pub telegram: Option<Telegram>,
     pub poll_interval: Duration,
     pub idle_poll_interval: Duration,
+    /// Where what must survive a restart is kept: the record of files already
+    /// in the library before each download (`state::Preexisting`).
+    pub state_dir: Option<PathBuf>,
 }
 
 fn var(key: &str) -> Result<String> {
@@ -108,6 +111,10 @@ impl Config {
             telegram,
             poll_interval: millis_or("POLL_MS", DEFAULT_POLL_MS)?,
             idle_poll_interval: millis_or("IDLE_POLL_MS", DEFAULT_IDLE_POLL_MS)?,
+            state_dir: std::env::var("STATE_DIR")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from),
         })
     }
 
@@ -257,6 +264,7 @@ impl Config {
             telegram: None,
             poll_interval: Duration::from_millis(DEFAULT_POLL_MS),
             idle_poll_interval: Duration::from_millis(DEFAULT_IDLE_POLL_MS),
+            state_dir: None,
         }
     }
 }

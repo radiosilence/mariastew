@@ -249,7 +249,7 @@ async fn record_preexisting(state: &AppState, gid: &str, files: &[crate::aria2::
             existing.insert(std::path::PathBuf::from(&f.path));
         }
     }
-    state.preexisting.record(gid, existing);
+    state.preexisting.record(gid, existing).await;
 }
 
 /// The download a selection has to be applied to, given the gid an add is

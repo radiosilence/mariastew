@@ -52,7 +52,7 @@ than a percentage:
   `Complete` the moment the *torrent file* arrives, so every reading taken off
   its byte counters would describe the wrong download: a green row saying
   "downloaded" with a full bar and "0s left", a Telegram announcement, and a
-  `sweep_garbage` of a directory nothing has been written to. A metadata pass
+  `library::sweep` of a directory nothing has been written to. A metadata pass
   measures nothing (`Download::display_totals`), so it renders as the unknown
   it is: indeterminate bar, no size, no ETA, still *finding peers*.
 - **Readings, not just a bar:** bytes done against total, up and down rates,
@@ -132,7 +132,7 @@ selection landed to the sweep below.
 
 aria2 also downloads whole pieces regardless of selection, so a small
 deselected file sharing a piece boundary with a selected one can land anyway
-even once selection is correct. `notify::sweep_garbage` runs from the same
+even once selection is correct. `library::sweep` runs from the same
 completion watch that sends the Telegram message and deletes whichever of the
 download's own files `filter::is_garbage` flags, selected or not, along with
 the directories that leaves empty below `dir`.
@@ -162,16 +162,21 @@ lists is hash-checked when the download starts and counted as complete,
 exactly like one it fetched. Re-adding a season pack into the folder that
 holds some of its episodes is the ordinary case, and nothing aria2 reports
 afterwards tells those episodes apart from the new ones. The difference is
-only visible before the download starts, so `finish_add_inner` records which
+only visible before the download starts, so `add::finish` records which
 listed paths already exist while aria2 holds the download paused
 (`--pause-metadata`), before it has opened anything (`state::Preexisting`).
-Neither cancel nor the sweep touches a recorded path.
+Neither cancel nor the sweep touches a recorded path: both ask
+`library::written` which files a download wrote.
 
-The record lives in memory, like the activity log. For a download added before
-the pod last started there is none, and cancel falls back to deleting only
-selected files aria2 has not completed: a complete one may be a pre-existing
-file it verified. That leaves some partial junk behind in exchange for never
-deleting a finished episode nobody can prove the torrent wrote.
+The record is kept in `STATE_DIR`, which the chart puts on aria2's state
+volume, because the moment it matters most is just after a restart: the
+notifier sweeps every finished download it finds as it starts. A download with
+no record (one added before the record was kept, or a process run without
+`STATE_DIR`) gets the cautious answer. Cancel deletes only selected files aria2
+has not completed, since a complete one may be a pre-existing file it verified,
+and the sweep deletes nothing, since its candidates are complete files. That
+leaves junk behind in exchange for never deleting a file nobody can prove the
+torrent wrote.
 
 `clean-dls` in the dotfiles — the script `filter.rs` is ported from — ends by
 handing the tree to `prune`, which deletes any directory under a size
@@ -337,7 +342,7 @@ a disk read rather than a negotiation — restoring with the network unplugged
 loads the metadata and finishes verification in two seconds. aria2 names the
 file `<infohash>.torrent` and puts it beside the data, with no option to put it
 elsewhere, so ~60KB per torrent sits in the library next to what it describes.
-It is not in the torrent's file list, so `notify::sweep_garbage` never
+It is not in the torrent's file list, so `library::sweep` never
 considers it, and it survives to be read.
 
 Anything added before this existed has no saved torrent and falls back to the

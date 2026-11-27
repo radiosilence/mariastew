@@ -112,32 +112,68 @@ const MAX_PREEXISTING: usize = 200;
 /// visible before the download starts, which is when `add::finish` looks.
 /// Cancelling and the garbage sweep leave these files alone.
 ///
-/// Lost on restart, like the activity log: a download added before it has no
-/// record, and `known` says so.
+/// Kept across restarts in `STATE_DIR` when it is set: the sweep after a
+/// restart is exactly when it is needed, since the notifier sweeps every
+/// finished download it finds as it starts. A download with no record (one
+/// added before the record was kept, or with no `STATE_DIR`) is `known` as
+/// `None`, and deleting for it is cautious (`library`).
 #[derive(Clone, Default)]
-pub struct Preexisting(Arc<Mutex<PreexistingInner>>);
+pub struct Preexisting {
+    inner: Arc<Mutex<PreexistingInner>>,
+    /// Where the record is kept; none keeps it in memory.
+    file: Option<Arc<PathBuf>>,
+    /// One write at a time, so an older record never lands after a newer one.
+    writing: Arc<tokio::sync::Mutex<()>>,
+}
 
-#[derive(Default)]
+#[derive(Default, serde::Serialize, serde::Deserialize)]
 struct PreexistingInner {
     files: HashMap<String, HashSet<PathBuf>>,
     order: VecDeque<String>,
 }
 
 impl Preexisting {
-    fn lock(&self) -> std::sync::MutexGuard<'_, PreexistingInner> {
-        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    /// The record kept in `dir`, or an empty one kept there from now on. A
+    /// record that cannot be read is started afresh, with a warning: every
+    /// download in it then has no record, which deletes less, not more.
+    pub async fn load(dir: Option<&std::path::Path>) -> Self {
+        let Some(dir) = dir else {
+            return Self::default();
+        };
+        let file = dir.join("preexisting.json");
+        let read = match tokio::fs::read(&file).await {
+            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| e.to_string()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(PreexistingInner::default()),
+            Err(e) => Err(e.to_string()),
+        };
+        let inner = read.unwrap_or_else(|error| {
+            tracing::warn!(path = %file.display(), %error, "the record of files already in the library could not be read; starting afresh");
+            PreexistingInner::default()
+        });
+        Self {
+            inner: Arc::new(Mutex::new(inner)),
+            file: Some(Arc::new(file)),
+            writing: Arc::default(),
+        }
     }
 
-    pub fn record(&self, gid: &str, files: HashSet<PathBuf>) {
-        let mut inner = self.lock();
-        if inner.files.insert(gid.to_string(), files).is_none() {
-            inner.order.push_back(gid.to_string());
-            if inner.order.len() > MAX_PREEXISTING
-                && let Some(oldest) = inner.order.pop_front()
-            {
-                inner.files.remove(&oldest);
+    fn lock(&self) -> std::sync::MutexGuard<'_, PreexistingInner> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub async fn record(&self, gid: &str, files: HashSet<PathBuf>) {
+        {
+            let mut inner = self.lock();
+            if inner.files.insert(gid.to_string(), files).is_none() {
+                inner.order.push_back(gid.to_string());
+                if inner.order.len() > MAX_PREEXISTING
+                    && let Some(oldest) = inner.order.pop_front()
+                {
+                    inner.files.remove(&oldest);
+                }
             }
         }
+        self.save().await;
     }
 
     /// `None` when nothing was recorded for this download.
@@ -145,10 +181,41 @@ impl Preexisting {
         self.lock().files.get(gid).cloned()
     }
 
-    pub fn forget(&self, gid: &str) {
-        let mut inner = self.lock();
-        inner.files.remove(gid);
-        inner.order.retain(|g| g != gid);
+    pub async fn forget(&self, gid: &str) {
+        {
+            let mut inner = self.lock();
+            if inner.files.remove(gid).is_none() {
+                return;
+            }
+            inner.order.retain(|g| g != gid);
+        }
+        self.save().await;
+    }
+
+    /// Writes the record whole, beside its file and then over it, so a
+    /// process stopped part-way leaves the last record rather than half of
+    /// one. A failure is logged: the record in memory still holds.
+    async fn save(&self) {
+        let Some(file) = &self.file else {
+            return;
+        };
+        let _writing = self.writing.lock().await;
+        let json = serde_json::to_vec(&*self.lock());
+        let json = match json {
+            Ok(json) => json,
+            Err(e) => {
+                tracing::warn!(error = %e, "could not encode the record of files already in the library");
+                return;
+            }
+        };
+        let partial = file.with_extension("json.partial");
+        let written = match tokio::fs::write(&partial, json).await {
+            Ok(()) => tokio::fs::rename(&partial, file.as_path()).await,
+            Err(e) => Err(e),
+        };
+        if let Err(e) = written {
+            tracing::warn!(path = %file.display(), error = %e, "could not keep the record of files already in the library");
+        }
     }
 }
 

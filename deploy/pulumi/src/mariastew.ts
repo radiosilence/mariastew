@@ -146,6 +146,15 @@ export function createMariastew(
     mountPath: conf.aria2.statePath,
   };
   const sessionFile = `${conf.aria2.statePath}/aria2.session`;
+  // The service's own state, a directory of the same volume that aria2 never
+  // touches: the record of which files were in the library before each
+  // download, which the garbage sweep after a restart depends on.
+  const serviceState = `${conf.aria2.statePath}/mariastew`;
+  const serviceStateMount = {
+    name: "aria2-state",
+    mountPath: serviceState,
+    subPath: "mariastew",
+  };
 
   new k8s.apps.v1.Deployment(
     "mariastew",
@@ -221,6 +230,20 @@ export function createMariastew(
                 securityContext: { allowPrivilegeEscalation: false },
                 volumeMounts: [stateMount],
               },
+              // The service's directory, made as the pod's user: one kubelet
+              // made for a `subPath` would be root's and unwritable.
+              {
+                name: "service-state",
+                image: VERSIONS.mariastew,
+                imagePullPolicy: "IfNotPresent",
+                command: ["/bin/mkdir", "-p", serviceState],
+                resources: {
+                  requests: { cpu: "5m", memory: "8Mi" },
+                  limits: { memory: "32Mi" },
+                },
+                securityContext: { allowPrivilegeEscalation: false },
+                volumeMounts: [stateMount],
+              },
             ],
             // NOT hostNetwork. The two containers share the pod's network
             // namespace, which is exactly what makes aria2's RPC reachable at
@@ -242,6 +265,7 @@ export function createMariastew(
                     value: conf.roots.map((r) => `${r.name}:${r.hostPath}`).join(","),
                   },
                   { name: "PUBLIC_URL", value: `https://${opts.hostname}` },
+                  { name: "STATE_DIR", value: serviceState },
                   { name: "OIDC_ISSUER", value: opts.oidc.issuer },
                   { name: "OIDC_CLIENT_ID", value: opts.oidc.clientId },
                   {
@@ -271,7 +295,7 @@ export function createMariastew(
                   ...(conf.requests && { requests: conf.requests }),
                 },
                 securityContext: { allowPrivilegeEscalation: false },
-                volumeMounts: mounts,
+                volumeMounts: [...mounts, serviceStateMount],
               },
               {
                 name: "aria2",
@@ -413,9 +437,9 @@ export function createMariastew(
                   ...(conf.aria2.requests && { requests: conf.aria2.requests }),
                 },
                 securityContext: { allowPrivilegeEscalation: false },
-                // The state volume is aria2's alone. The service reads the
-                // queue over RPC and has no business holding the file that
-                // queue is written to.
+                // aria2 holds the whole state volume. The service mounts only
+                // its own directory of it: it reads the queue over RPC and has
+                // no business holding the file that queue is written to.
                 volumeMounts: [...mounts, stateMount],
               },
             ],

@@ -115,7 +115,6 @@ impl Downloads {
         Self { seen }
     }
 
-    /// What `snapshot` changes on the page.
     /// What `snapshot` changes on the page, and `seen` as the page will have
     /// it, whenever anything changed.
     pub(in crate::web) fn draw(&mut self, state: &AppState, snapshot: &Snapshot) -> Vec<Event> {

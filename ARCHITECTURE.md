@@ -28,12 +28,15 @@ the poller, the activity log and the in-flight marks) and serves
   follows the magnet to the download it becomes, narrows that to the files
   worth keeping (`filter`) and releases it. `resume` finishes an add a restart
   interrupted.
-- **Removal** (`library`) takes a download out of aria2 and deletes from the
-  media library what an unfinished one wrote; every deletion goes through
-  `library::remove_contained`.
+- **Deletion** (`library`) is the only thing that deletes from the media
+  library: cancelling an unfinished download (`library::remove`) and sweeping
+  the garbage a finished one wrote (`library::sweep`). Both ask
+  `library::written` which files a download wrote, from the record of what was
+  there first (`state::Preexisting`, kept in `STATE_DIR` across restarts), and
+  every deletion goes through `library::remove_contained`.
 - **The notifier** (`notify`) reads the poller's snapshots, records health
-  changes in the activity log, sweeps garbage a finished download wrote, and
-  sends Telegram messages, drawn from `templates/notify/`.
+  changes in the activity log, has `library` sweep the garbage a finished
+  download wrote, and sends Telegram messages, drawn from `templates/notify/`.
 
 None of these import anything from `web`.
 
