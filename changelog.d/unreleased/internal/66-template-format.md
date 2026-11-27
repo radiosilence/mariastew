@@ -1,0 +1,1 @@
+- **The templates are formatted, and CI keeps them so.** askama-analyzer's formatter lays out the Rust inside tags and indents the HTML; `mise run fmt` runs it, and CI's check job fails on an unformatted template.
