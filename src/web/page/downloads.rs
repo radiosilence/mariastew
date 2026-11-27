@@ -28,7 +28,6 @@ pub(in crate::web) mod destination;
 #[derive(Template)]
 #[template(path = "downloads/page.html")]
 pub(in crate::web) struct Page {
-    add: Html,
     list: Html,
 }
 
@@ -51,11 +50,7 @@ impl Page {
                 (List::unreachable().draw(), Seen::unreachable())
             }
         };
-        let page = Page {
-            add: add::Sheet::of(state).draw(),
-            list,
-        };
-        (page, seen)
+        (Page { list }, seen)
     }
 }
 
@@ -178,11 +173,10 @@ struct File {
     selected: bool,
 }
 
-/// A line of the download's history, as UTC for a page without script and as
-/// epoch milliseconds for the browser to show in its own zone.
+/// A line of the download's history, at epoch milliseconds, which the kit's
+/// `Time` shows in the reader's own zone.
 struct Line {
-    utc: String,
-    at_ms: u64,
+    at_ms: i64,
     message: String,
 }
 
@@ -273,16 +267,13 @@ impl Download {
                 .then(|| format!("{skipped_count} skipped, {}", format::bytes(skipped_bytes))),
             log: log
                 .into_iter()
-                .map(|e| {
-                    let ms =
-                        e.at.duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_millis() as u64;
-                    Line {
-                        utc: format::utc_hms(ms),
-                        at_ms: ms,
-                        message: e.message,
-                    }
+                .map(|e| Line {
+                    at_ms: e
+                        .at
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as i64,
+                    message: e.message,
                 })
                 .collect(),
             finished: d.is_finished(),
@@ -622,9 +613,8 @@ mod tests {
         assert!(html.contains("and 16 more"), "{html}");
     }
 
-    /// A log says when, in the reader's zone: the markup carries UTC, and the
-    /// time travels in `data-at` so the expression that rewrites it is a
-    /// constant.
+    /// A log says when, in the reader's zone: the kit's `Time` carries UTC as
+    /// its text and the instant in `data-at` for the browser to rewrite.
     #[test]
     fn a_log_line_is_stamped_with_a_clock_time_the_browser_localises() {
         let html = draw_with(

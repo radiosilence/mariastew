@@ -45,20 +45,6 @@ pub fn duration(secs: u64) -> String {
     }
 }
 
-/// `hh:mm:ss` UTC from epoch milliseconds, which needs no date crate and no
-/// timezone the pod does not have. It is what a log line's time reads as
-/// before the browser rewrites it in local time. No date: the log is bounded
-/// and every line in it is from the life of a download currently on screen.
-pub fn utc_hms(epoch_ms: u64) -> String {
-    let secs = epoch_ms / 1000 % 86_400;
-    format!(
-        "{:02}:{:02}:{:02}",
-        secs / 3600,
-        secs % 3600 / 60,
-        secs % 60
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -82,12 +68,5 @@ mod tests {
         assert_eq!(duration(45), "45s");
         assert_eq!(duration(125), "2m 5s");
         assert_eq!(duration(7_320), "2h 2m");
-    }
-
-    #[test]
-    fn utc_hms_is_the_time_of_day_from_epoch_millis() {
-        assert_eq!(utc_hms(0), "00:00:00");
-        assert_eq!(utc_hms(1_754_646_731_000), "09:52:11");
-        assert_eq!(utc_hms(86_399_000), "23:59:59");
     }
 }

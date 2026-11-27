@@ -5,10 +5,20 @@
 <div id="destination" class="flex flex-col gap-2">
   <div class="flex items-center gap-2">
     {%- if !path.is_empty() %}
-    {{ kit::Button::quiet("all destinations").icon_only(kit::icon::LIBRARY).get("/browse").busy_key("destination") }}
+      {{
+          kit::Button::quiet("all destinations")
+              .icon_only(kit::icon::LIBRARY)
+              .get("/browse")
+              .busy_key("destination")
+      }}
     {%- endif %}
     {%- if let Some(p) = parent %}
-    {{ kit::Button::quiet("up").icon(kit::icon::ARROW_UP).get(self.browse(p)).busy_key("destination") }}
+      {{
+          kit::Button::quiet("up")
+              .icon(kit::icon::ARROW_UP)
+              .get(self.browse(p))
+              .busy_key("destination")
+      }}
     {%- endif %}
     <span class="min-w-0 flex-1 break-words text-muted">{% if label.is_empty() %}all destinations{% else %}{{ label }}{% endif %}</span>
   </div>
@@ -26,15 +36,36 @@
       folders can differ only in a tail (a part number, a disc, a cut), which is the case a picker has to get right. #}
   <ul class="flex max-h-[40dvh] flex-col overflow-y-auto overscroll-contain">
     {%- for folder in folders %}
-    <li>{{ kit::Button::quiet(folder.name).icon(kit::icon::FOLDER).get(self.browse(folder.path)).busy_key("destination").class("w-full justify-start text-left break-words") }}</li>
+    <li>{{
+        kit::Button::quiet(folder.name)
+            .icon(kit::icon::FOLDER)
+            .get(self.browse(folder.path))
+            .busy_key("destination")
+            .class("w-full justify-start text-left break-words")
+    }}</li>
     {%- endfor %}
   </ul>
   {%- endif %}
   {% endfilter %}
   <div class="controls">
     {{ kit::Input::hidden("parent", path).attr("form", "mkdir-form") }}
-    {{ kit::Input::text("name").label("new folder name").placeholder("new folder name").autocomplete("off").attr("enterkeyhint", "done").attr("form", "mkdir-form").class("min-w-0 flex-1").required() }}
-    {{ kit::Button::bordered("create folder").icon_only(kit::icon::PLUS).post("/mkdir").sends("mkdir-form").busy_key("destination") }}
+    {{
+        kit::Input::text("name")
+            .label("new folder name")
+            .placeholder("new folder name")
+            .autocomplete("off")
+            .attr("enterkeyhint", "done")
+            .attr("form", "mkdir-form")
+            .class("min-w-0 flex-1")
+            .required()
+    }}
+    {{
+        kit::Button::bordered("create folder")
+            .icon_only(kit::icon::PLUS)
+            .post("/mkdir")
+            .sends("mkdir-form")
+            .busy_key("destination")
+    }}
   </div>
   {{ kit::Input::hidden("dir", path) }}
 </div>

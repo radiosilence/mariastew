@@ -1,7 +1,11 @@
 <!doctype html>
 <html lang="en">
   <head>
-    {{ kit::Head::new(self.asset("/assets/app.css")).title("mariastew").datastar("/assets/datastar.js") }}
+    {{
+        kit::Head::new(self.asset("/assets/app.css"))
+            .title("mariastew")
+            .datastar("/assets/datastar.js")
+    }}
     {#- The SVG is what every browser here uses; the `.ico` is for Windows and for anything that asks before it has
         parsed this. The apple-touch icon and the manifest's maskable pair are drawn full-bleed, since iOS and Android
         round a home screen icon themselves (scripts/gen-app-icons.ts). #}
@@ -9,7 +13,6 @@
     <link rel="icon" href="{{ self.asset("/assets/icon.svg") }}" type="image/svg+xml">
     <link rel="apple-touch-icon" href="{{ self.asset("/assets/apple-touch-icon.png") }}">
     <link rel="manifest" href="{{ self.asset("/assets/manifest.webmanifest") }}">
-    <script type="module" src="{{ self.asset("/assets/app.js") }}"></script>
   </head>
   <body data-signals="{{ signals }}">
     {{ kit::SkipLink::new("skip to the downloads", "downloads") }}
@@ -17,13 +20,19 @@
     {#- Owns the history: Back and Forward load the entry in place, with the address following `$url`. #}
     {{ kit::Navigation::new() }}
     {{ main }}
-    {#- Below the list, where a version is looked for. It clears the home indicator, since it is the last thing on
-        the page. #}
-    <footer class="pb-[max(1rem,env(safe-area-inset-bottom))] text-center">
-      {{ kit::Release::new("mariastew", self.version(), "https://github.com/radiosilence/mariastew") }}
-    </footer>
+    {#- Below the list, where a version is looked for. #}
+    {% filter kit::wrap(kit::Footer::new()) %}
+    {{
+        kit::Release::new("mariastew", self.version(), "https://github.com/radiosilence/mariastew")
+    }}
+    {% endfilter %}
     {{ kit::Confirm::new("keep it") }}
     {#- Datastar drops an error answer's body, so the region says a failure itself; a 401 is a session that ended. #}
-    {{ kit::Flash::region().failed("that did not work — try again.").unreachable("mariastew could not be reached.").sign_in("/auth/login") }}
+    {{
+        kit::Flash::region()
+            .failed("that did not work — try again.")
+            .unreachable("mariastew could not be reached.")
+            .sign_in("/auth/login")
+    }}
   </body>
 </html>

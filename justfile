@@ -16,7 +16,7 @@ kit:
 # server embeds it; CI fails a build where it is stale, or where a template or the Rust that writes markup uses a class
 # outside the kit.
 css: node kit
-    node styles/kit/kit-check.mjs templates src web
+    node styles/kit/kit-check.mjs templates src
     ./node_modules/.bin/tailwindcss --input styles/app.css --output assets/app.css --minify
 
 # Write CHANGELOG.md from the fragments in changelog.d/. `--stdout` prints it instead.

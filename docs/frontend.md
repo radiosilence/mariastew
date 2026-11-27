@@ -1,26 +1,21 @@
 # The frontend, and its committed assets
 
-The stylesheet, the browser script and the icons are generated and **committed**,
-so `cargo build` needs no node toolchain and the container build has one
-artefact rather than two. That only holds while the committed copies match
-their sources, which CI's `web` job checks by rebuilding them and failing on
-any difference. The same job runs `mise run lint` (oxlint, and oxfmt in check
-mode; `mise run fmt` applies it) and the browser typecheck. Node packages are
-installed with aube from `aube-lock.yaml`.
+The stylesheet and the icons are generated and **committed**, so `cargo build`
+needs no node toolchain and the container build has one artefact rather than
+two. That only holds while the committed stylesheet matches its sources, which
+CI's `web` job checks by rebuilding it and failing on any difference. The same
+job runs `mise run lint` (oxlint, and oxfmt in check mode, over the scripts and
+the deploy chart; `mise run fmt` applies it). Node packages are installed with
+aube from `aube-lock.yaml`.
 
 ## Where the JavaScript lives
 
-Datastar evaluates a `data-on:*` attribute as a function body, so an attribute
-will hold anything JavaScript can express, invisible to oxlint, oxfmt and
-`tsc`. Every expression in the markup is therefore a constant: the kit's
-components write their own, and a value that differs per row travels in an
-escaped `data-*` attribute the expression reads. The little the page does
-without asking the server, the magnet rows and the keyboard inset, is
-`web/ms.ts`, and the attributes call it. `assets/app.js` is its bundled,
-committed output (see "Rebuilding the browser script" below). Nothing checks
-the two halves against each other at build time, so a test does:
-`every_ms_helper_the_sheet_calls_is_defined` draws the add sheet, collects
-every `ms.*` it names, and fails if `web/ms.ts` or the bundle lacks one.
+Nowhere of the app's own. Datastar evaluates a `data-on:*` attribute as a
+function body, so an attribute will hold anything JavaScript can express,
+invisible to oxlint, oxfmt and `tsc`. Every expression in the markup is
+therefore the kit's: the magnet rows are its `RepeatField`, a log line's time
+is its `Time`, and its `Sheet` keeps itself above an on-screen keyboard. The
+page loads Datastar, from askama_datastar, and nothing else.
 
 ## Adding one
 
@@ -33,20 +28,19 @@ top of the screen for a field at the bottom of it, on every open, whether or
 not there was anything anyone wanted pasted; asking from a button beside the
 field puts it against the field it fills, and only when asked.
 
-Whatever is on the clipboard goes in, magnet or not. Filtering to magnets was
-right while the read was automatic, since nothing unasked-for should land in a
-field — but a button that answers a tap by doing nothing reads as broken,
-where a wrong value is visible and `/add` says what is wrong with it. A
+Whatever is on the clipboard goes in, magnet or not: a button that answers a
+tap by doing nothing reads as broken, where a wrong value is visible and `/add`
+says what is wrong with it. A
 refused prompt and a browser with no clipboard API are both no-ops: either way
 there is a field to type into.
 
-Several magnets go in as several rows, one field each, under one destination.
-A row is a clone of the first and carries no Datastar attributes of its own;
-paste, remove and Enter are delegated from the list, so a row added later
-needs nothing wired up. A clipboard holding more than one magnet — a list
-copied from a forum post or a chat — fills a row per magnet, from either the
-Paste button or a native paste, because an `<input>` would otherwise drop the
-line breaks and run them together into one invalid link.
+Several magnets go in as several rows, one field each, under one destination:
+the kit's `RepeatField`. A paste holding several words — a list copied from a
+forum post or a chat — fills a row per word, from either the Paste button or a
+native paste, because an `<input>` would otherwise drop the line breaks and run
+them together into one invalid link. Every word gets a row, magnet or not, so
+a list with prose between its links leaves rows for `/add` to refuse by
+number; clearing those is quicker than finding a link a filter dropped.
 
 `/add` takes the batch whole for validation and one magnet at a time for
 aria2: a bad row refuses everything, since nothing has been added yet and that
@@ -65,8 +59,10 @@ button is made its form's submit with the kit's `Button::sends`, which is what
 the browser's implicit submission presses.
 
 When some of a batch went in and some did not, the server answers with the
-magnet rows that are left, so pressing Add again sends only those. Closing the
-sheet, by any of the ways a dialog closes, asks the server for it fresh.
+magnet rows that are left, so pressing Add again sends only those. The sheet
+reads its body from the server each time it opens (`kit::Sheet::loads`), so an
+attempt abandoned by any of the ways a dialog closes is gone on the next
+opening.
 
 ## Where the sheet sits
 
@@ -79,13 +75,10 @@ put every pixel of the shortfall on one side.
 
 The keyboard is the other half. iOS Safari shrinks the *visual* viewport for
 it and leaves the layout viewport alone, and fixed positioning resolves
-against the layout one — so a sheet at `bottom: 0` opens underneath the
-keyboard, and Safari then scrolls the page chasing the focused field. Nothing
-in CSS describes that gap; `web/ms.ts` measures it against `visualViewport` and
-publishes `--keyboard-inset`, which the sheet subtracts from both its bottom
-inset and its height. A browser that resizes its layout viewport for its own
-keyboard measures zero, which is also the fallback, so this corrects only the
-browsers that need correcting.
+against the layout one, so a sheet at `bottom: 0` would open underneath the
+keyboard. The kit's `Sheet` measures the gap against `visualViewport` and
+publishes `--keyboard-inset`, which its stylesheet subtracts from the sheet's
+bottom inset and height.
 
 ## Icons
 
@@ -189,29 +182,6 @@ just css
 
 This installs the Node packages, links `styles/kit` to the koan-kit-web crate's
 source at the version `Cargo.lock` names, runs the kit's `kit-check` over
-`templates/`, `src/` and `web/`, and compiles `styles/app.css` into
+`templates/` and `src/`, and compiles `styles/app.css` into
 `assets/app.css`. The kit's typeface is served from the crate
 (`koan_kit_web::font::serve`) beside the stylesheet, where it asks for it.
-
-## Rebuilding the browser script
-
-Same deal as the stylesheet: `web/` is source and `assets/app.js` is
-the committed output, so only editing the source needs Node:
-
-```sh
-mise run js
-```
-
-rolldown bundles `web/main.ts` into one minified file. `main.rs` embeds it as
-an askama_datastar `Asset`, as it does the stylesheet, typeface and icons, and
-the page names each by an address carrying a hash of its bytes, so a browser
-caches it for good and a deploy's page fetches the new copy rather than a
-stale one.
-
-Datastar is not in the bundle. It is the copy the `askama_datastar` crate
-vendors and pins, served at `/assets/datastar.js` under a hash of its contents,
-so every radiosilence UI runs the same release and moves to the next one with
-the crate. The kit's `Head` loads it, and the bundle after it; `ms.*` is
-called only from event handlers, so the order does not matter.
-
-`mise run typecheck` checks `web/` against `tsconfig.web.json`.

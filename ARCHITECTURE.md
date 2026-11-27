@@ -95,8 +95,7 @@ the address as `$url` (`askama_datastar::address`); `Navigation`, placed once
 in the document, owns the history and keeps the address bar on `$url`.
 
 The page starts with the signals every page declares: `url`, which the
-stream's `reopen_on` names, and `seen`, what its stream carries on from. The
-add sheet adds `_added`, which only the page reads.
+stream's `reopen_on` names, and `seen`, what its stream carries on from.
 
 ### The stream
 
@@ -137,11 +136,12 @@ An action changes something and answers with as little as it can:
   (`library::remove`), so the button's own wait is the wait, and closes the
   page's question with `kit::Confirm::close` when cancelling an unfinished
   download asked one.
-- **Add**: a batch that went in whole sets `_added`, which closes the sheet;
-  the stream draws the new rows behind it. A refusal answers with the regions
-  it changed: `#add-error` saying why, and `#magnets` holding only the magnets
-  that did not go in. Closing the sheet, however it is closed, asks for it
-  fresh (`GET /add`).
+- **Add**: the sheet is a `kit::Sheet::loads("/add")`, which reads its body
+  afresh each time it opens, so an abandoned attempt leaves nothing behind. A
+  batch that went in whole answers `kit::Sheet::dismiss`, which closes it; the
+  stream draws the new rows behind it. A refusal answers with the regions it
+  changed: `#add-error` saying why, and `#magnets` holding only the magnets
+  that did not go in.
 - **Browse, make a folder**: nothing streams the picker, so each answers with
   `#destination` as it now stands, or `#add-error` on a refusal. A flash would
   sit under the open sheet.
@@ -159,14 +159,15 @@ nothing calls `Html::trusted`, and no template uses `|safe`. A wrapper is a kit
 component with a slot (`{% filter kit::wrap(…) %}`).
 
 Datastar expressions are constants. A value that differs per row goes in a
-`data-*` attribute, escaped, and the expression reads `el.dataset`: a log
-line's time is `data-at`, and every button's URL is the kit's `data-url`.
+`data-*` attribute, escaped, and the expression reads `el.dataset`, as every
+button's URL is the kit's `data-url`. The app writes no expressions of its own:
+the magnet rows are the kit's `RepeatField`, a log line's time is its `Time`,
+and every sheet keeps above an on-screen keyboard by itself. There is no
+browser script beyond Datastar.
 Signals are named by the program, never built from data. Datastar sends every
 signal except those whose names start with `_`, so a signal the server reads
-(`url`, `seen`) has no underscore, and one only the page reads (`_added`, the
-kit's busy signals) has one. The little the page does without the server (the
-magnet rows' paste, clone and remove, and the keyboard inset) is `web/ms.ts`,
-called from constant expressions.
+(`url`, `seen`) has no underscore, and one only the page reads (the kit's
+busy signals) has one.
 
 ### Patch targets
 

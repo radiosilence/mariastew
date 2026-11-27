@@ -14,9 +14,8 @@ field a person controls goes in the escaping guard (`src/web/escaping.rs`).
 
 ## Building
 
-`cargo build` needs no Node: the stylesheet and script bundle are committed.
-After changing a template or `styles/`, run `just css`; after changing `web/`,
-run `mise run js`. See docs/frontend.md.
+`cargo build` needs no Node: the stylesheet is committed. After changing a
+template or `styles/`, run `just css`. See docs/frontend.md.
 
 ## Changes
 

@@ -1,6 +1,6 @@
 //! The files the page loads, served from the binary rather than a volume: the
-//! stylesheet and the script bundle are build outputs, so a mount would be a
-//! second thing to keep in step with the image.
+//! stylesheet is a build output, so a mount would be a second thing to keep in
+//! step with the image.
 //!
 //! The page names each by [`url`], which carries a hash of its bytes, so a
 //! browser keeps it for good and a deploy's page fetches the new copy. Asked
@@ -20,10 +20,6 @@ use crate::state::AppState;
 static APP_CSS: Asset = Asset::new(
     include_bytes!("../../assets/app.css"),
     "text/css; charset=utf-8",
-);
-static APP_JS: Asset = Asset::new(
-    include_bytes!("../../assets/app.js"),
-    "text/javascript; charset=utf-8",
 );
 static MANIFEST: Asset = Asset::new(
     include_bytes!("../../assets/manifest.webmanifest"),
@@ -49,8 +45,7 @@ static ICON_512_MASKABLE: Asset = Asset::new(
 /// Every embedded file and the path it is served at. `/favicon.ico` sits
 /// beside its `/assets` copy because that is the path a browser asks for on
 /// its own, before it has parsed any `<link>`.
-static SERVED: [(&str, &Asset); 11] = [
-    ("/assets/app.js", &APP_JS),
+static SERVED: [(&str, &Asset); 10] = [
     ("/assets/app.css", &APP_CSS),
     ("/assets/manifest.webmanifest", &MANIFEST),
     ("/assets/icon.svg", &ICON_SVG),

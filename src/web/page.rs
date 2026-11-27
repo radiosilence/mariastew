@@ -42,13 +42,8 @@ pub(super) async fn serve(
             askama_datastar::PatchSignals::new(signals(&url, &seen).to_string()).into(),
         ]);
     }
-    let mut signals = signals(&url, &seen);
-    if let Some(all) = signals.as_object_mut() {
-        // The add sheet's own, which the server sets and the sheet reads.
-        all.extend(downloads::add::signals());
-    }
     match askama_datastar::Html::render(&Layout {
-        signals: signals.to_string(),
+        signals: signals(&url, &seen).to_string(),
         main,
     }) {
         Ok(html) => html.into_response(),

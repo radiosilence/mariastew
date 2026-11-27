@@ -41,14 +41,17 @@
   {% endfilter %}
   {%- endif %}
   {%- if !log.is_empty() %}
-  {#- What happened while adding it, which aria2 has no record of. The time is UTC in the markup and the reader's own
-      zone once the browser rewrites it from `data-at`. #}
+  {#- What happened while adding it, which aria2 has no record of. #}
   {% filter kit::wrap(kit::Disclosure::new("").id(self.log_id())) %}
   <summary class="text-fine">logs <span class="text-muted">— {{ log.len() }} entries</span></summary>
   <ol class="flex flex-col gap-1 text-fine">
     {%- for line in log %}
     <li class="flex gap-2">
-      <span class="w-16 shrink-0 text-right tabular-nums text-muted" data-at="{{ line.at_ms }}" data-text="new Date(+el.dataset.at).toLocaleTimeString([], {hour12: false})">{{ line.utc }}</span>
+      {{
+          kit::Time::millis(line.at_ms.clone())
+              .clock()
+              .class("w-16 shrink-0 text-right tabular-nums text-muted")
+      }}
       <span class="break-words">{{ line.message }}</span>
     </li>
     {%- endfor %}
@@ -71,14 +74,40 @@
     {{ kit::Button::bordered("clearing").busy(true).class("flex-1") }}
     {%- else %}
     {%- if paused %}
-    {{ kit::Button::bordered("resume").icon(kit::icon::PLAY).busy_key(gid).post(self.url("resume")).class("flex-1") }}
+    {{
+        kit::Button::bordered("resume")
+            .icon(kit::icon::PLAY)
+            .busy_key(gid)
+            .post(self.url("resume"))
+            .class("flex-1")
+    }}
     {%- else %}
-    {{ kit::Button::bordered("pause").icon(kit::icon::PAUSE).busy_key(gid).post(self.url("pause")).class("flex-1") }}
+    {{
+        kit::Button::bordered("pause")
+            .icon(kit::icon::PAUSE)
+            .busy_key(gid)
+            .post(self.url("pause"))
+            .class("flex-1")
+    }}
     {%- endif %}
     {%- if finished %}
-    {{ kit::Button::bordered("clear").icon(kit::icon::CHECK).busy_key(gid).post(self.url("remove")).class("flex-1") }}
+    {{
+        kit::Button::bordered("clear")
+            .icon(kit::icon::CHECK)
+            .busy_key(gid)
+            .post(self.url("remove"))
+            .class("flex-1")
+    }}
     {%- else %}
-    {{ kit::Button::bordered("cancel & delete").bad().icon(kit::icon::TRASH).busy_key(gid).post(self.url("remove")).confirm("cancel this download and delete what it has written?", "cancel & delete").class("flex-1") }}
+    {{
+        kit::Button::bordered("cancel & delete")
+            .bad()
+            .icon(kit::icon::TRASH)
+            .busy_key(gid)
+            .post(self.url("remove"))
+            .confirm("cancel this download and delete what it has written?", "cancel & delete")
+            .class("flex-1")
+    }}
     {%- endif %}
     {%- endif %}
   </div>

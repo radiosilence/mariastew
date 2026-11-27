@@ -7,7 +7,7 @@ edition = "2024"
 anyhow = "1.0.104"
 askama = "0.16.1"
 askama_datastar = "0.3.2"
-koan-kit-web = "0.8.1"
+koan-kit-web = "0.9"
 axum = "0.8"
 base64 = "0.23.1"
 reqwest = { version = "0.13", default-features = false, features = ["form", "json", "rustls"] }
