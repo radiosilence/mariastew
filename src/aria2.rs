@@ -214,7 +214,7 @@ pub struct File {
     /// `false` for a file `select-file` left out — aria2 still downloads
     /// whole pieces regardless, so a small deselected file sharing a piece
     /// boundary with a selected one can still land on disk. This is what
-    /// tells the completion sweep (`notify::sweep_garbage`) which files were
+    /// tells the completion sweep (`library::sweep`) which files were
     /// never meant to be there in the first place, as opposed to one that
     /// simply happens to be small.
     pub selected: bool,
@@ -1237,7 +1237,7 @@ mod tests {
 
     /// A file `select-file` left out is irrelevant to "finished" no matter
     /// how far along its own accidental piece-boundary spillover got —
-    /// see `notify::sweep_garbage` for what happens to it instead.
+    /// see `library::sweep` for what happens to it instead.
     #[test]
     fn a_fully_spilled_over_deselected_file_does_not_make_an_incomplete_selection_finished() {
         let mut d = download(Status::Active);

@@ -56,6 +56,7 @@ rather than the request that first needs it.
 | `ARIA2_RPC_URL` | No | `http://127.0.0.1:6800/jsonrpc` | |
 | `POLL_MS` | No | `100` | How often aria2 is sampled while a page is open |
 | `IDLE_POLL_MS` | No | `5000` | The same, with nobody watching |
+| `STATE_DIR` | No | — | A directory the service keeps what must survive a restart in: the record of which files were in the library before each download, without which the garbage sweep deletes nothing for a download added before the restart. The chart sets it to a directory of aria2's state volume |
 | `TELEGRAM_BOT_TOKEN` | No | — | Must be set with `TELEGRAM_CHAT_ID` or startup fails — a token with no chat id would otherwise fail on the first send, hours after the deploy that introduced it |
 | `TELEGRAM_CHAT_ID` | No | — | Both absent means no notifications, treated as normal |
 

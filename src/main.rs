@@ -57,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
         .no_proxy()
         .build()?;
 
+    let preexisting = state::Preexisting::load(config.state_dir.as_deref()).await;
     let state = AppState {
         aria2: aria2::Aria2::new(config.aria2_rpc_url.clone(), http.clone()),
         config: Arc::new(config),
@@ -65,7 +66,7 @@ async fn main() -> anyhow::Result<()> {
         poll: poll::Poll::new(),
         clearing: state::Clearing::default(),
         adding: state::Adding::default(),
-        preexisting: Default::default(),
+        preexisting,
         http,
     };
 
