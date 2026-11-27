@@ -265,6 +265,7 @@ mod tests {
         .await;
         let answer = answer(state(mock.url), &["magnet:?xt=urn:btih:abc"]).await;
         assert!(answer.contains("#add > section"), "{answer}");
+        assert!(answer.contains("el.closest('dialog').close()"), "{answer}");
         assert!(!answer.contains("add-error"), "{answer}");
     }
 

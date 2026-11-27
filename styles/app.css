@@ -66,3 +66,9 @@
     background-attachment: fixed;
   }
 }
+
+/* A sheet that loads has no form for its actions to send until its body arrives, so they take no presses meanwhile. */
+dialog.sheet > section:empty ~ footer > * {
+  pointer-events: none;
+  opacity: 0.5;
+}

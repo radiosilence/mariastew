@@ -233,13 +233,8 @@ impl Download {
             ratio: d.ratio().map(|r| format!("{r:.2}")),
             connections: d.connections,
             seeders: d.num_seeders,
-            pieces: (d.num_pieces > 0).then(|| {
-                format!(
-                    "{} pieces × {}",
-                    d.num_pieces,
-                    format::bytes(d.piece_length)
-                )
-            }),
+            pieces: (d.num_pieces > 0)
+                .then(|| format!("{} × {}", d.num_pieces, format::bytes(d.piece_length))),
             info_hash: d.info_hash.clone(),
             error: d.error_message.clone().filter(|m| !m.is_empty()),
             error_code: d
@@ -560,7 +555,7 @@ mod tests {
             "8m 32s",
             "256 MiB",
             "0.50",
-            "256 pieces × 4.00 MiB",
+            "256 × 4.00 MiB",
             "d1e2f3a4b5c6",
         ] {
             assert!(html.contains(reading), "no {reading}: {html}");

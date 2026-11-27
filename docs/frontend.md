@@ -35,12 +35,19 @@ refused prompt and a browser with no clipboard API are both no-ops: either way
 there is a field to type into.
 
 Several magnets go in as several rows, one field each, under one destination:
-the kit's `RepeatField`. A paste holding several words — a list copied from a
-forum post or a chat — fills a row per word, from either the Paste button or a
+the kit's `RepeatField`. A paste holding several lines — a list copied from a
+forum post or a chat — fills a row per line, from either the Paste button or a
 native paste, because an `<input>` would otherwise drop the line breaks and run
-them together into one invalid link. Every word gets a row, magnet or not, so
-a list with prose between its links leaves rows for `/add` to refuse by
-number; clearing those is quicker than finding a link a filter dropped.
+them together into one invalid link. It does not split on spaces: a magnet's
+`dn=` copied from a page can hold a literal one, and splitting there would cut
+one link into several invalid rows. Every line gets a row, magnet or not, so a
+list with prose between its links leaves rows for `/add` to refuse by number;
+clearing those is quicker than finding a link a filter dropped. The field is
+plain text with the URL keyboard rather than `type="url"`, so the browser's
+own validation never answers before `/add`'s row-numbered one.
+
+While the sheet reads its body the form it sends is not there yet, so its
+footer buttons take no presses until the body arrives (`styles/app.css`).
 
 `/add` takes the batch whole for validation and one magnet at a time for
 aria2: a bad row refuses everything, since nothing has been added yet and that
