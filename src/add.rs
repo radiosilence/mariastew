@@ -241,12 +241,22 @@ pub async fn finish(state: &AppState, sub: &str, dir: &str, metadata_gid: &str) 
 
 /// Record which of a paused download's listed files are already on disk.
 /// Called before aria2 has opened any of them, so whatever exists was in the
-/// library first: see `state::Preexisting`.
+/// library first: see `state::Preexisting`. A path that cannot be looked at
+/// for any reason but its absence (a permission, an unreachable mount) is
+/// recorded as there: being wrong that way keeps a file, the other way
+/// deletes one.
 async fn record_preexisting(state: &AppState, gid: &str, files: &[crate::aria2::File]) {
     let mut existing = HashSet::new();
     for f in files {
-        if tokio::fs::symlink_metadata(&f.path).await.is_ok() {
-            existing.insert(std::path::PathBuf::from(&f.path));
+        match tokio::fs::symlink_metadata(&f.path).await {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Ok(_) => {
+                existing.insert(std::path::PathBuf::from(&f.path));
+            }
+            Err(e) => {
+                tracing::warn!(path = %f.path, error = %e, "add: could not tell whether a file was already there; keeping it as if it were");
+                existing.insert(std::path::PathBuf::from(&f.path));
+            }
         }
     }
     state.preexisting.record(gid, existing).await;

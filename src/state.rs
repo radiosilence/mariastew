@@ -192,9 +192,10 @@ impl Preexisting {
         self.save().await;
     }
 
-    /// Writes the record whole, beside its file and then over it, so a
-    /// process stopped part-way leaves the last record rather than half of
-    /// one. A failure is logged: the record in memory still holds.
+    /// Writes the record whole, beside its file, flushed to the disk, and then
+    /// over it, so a process or a node stopped part-way leaves the last record
+    /// rather than half of one. A failure is logged: the record in memory
+    /// still holds.
     async fn save(&self) {
         let Some(file) = &self.file else {
             return;
@@ -209,10 +210,16 @@ impl Preexisting {
             }
         };
         let partial = file.with_extension("json.partial");
-        let written = match tokio::fs::write(&partial, json).await {
-            Ok(()) => tokio::fs::rename(&partial, file.as_path()).await,
-            Err(e) => Err(e),
-        };
+        let written = async {
+            use tokio::io::AsyncWriteExt as _;
+            let mut out = tokio::fs::File::create(&partial).await?;
+            out.write_all(&json).await?;
+            // Without this the rename can reach the disk before the bytes do,
+            // and a power cut leaves an empty record under the real name.
+            out.sync_all().await?;
+            tokio::fs::rename(&partial, file.as_path()).await
+        }
+        .await;
         if let Err(e) = written {
             tracing::warn!(path = %file.display(), error = %e, "could not keep the record of files already in the library");
         }
