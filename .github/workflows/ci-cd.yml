@@ -219,7 +219,8 @@ jobs:
           shared-key: check
           save-if: ${{ github.ref == 'refs/heads/main' }}
           cache-on-failure: true
-      - run: cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
+      - run: askama-analyzer fmt --check
+      - run: cargo fmt --check &&cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
 
   # The TypeScript and the committed assets built from it. Assets are
   # committed so `cargo build` needs no Node, which only holds while they
