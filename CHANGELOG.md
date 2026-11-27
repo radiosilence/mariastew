@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.9.0
+
+### Changed
+
+- **The web layer is a routed application in the shape of slsk-mcp.** One route table (`web::router`), one module and template directory per part of the page, the stream in its own module, and the add workflow (`add`) and library deletion (`library`) outside the web layer, so the poller, the reconciler and the notifier import nothing from it. Every control, notice and empty state is a koan-kit-web component, compiled from the crate's own stylesheet, so the GitHub Packages token is no longer needed to build. Datastar expressions are constants, per-row values travel in escaped `data-*` attributes, and no markup is built from strings or marked trusted. A stream sends only the rows that changed since the page or the previous stream drew them, and the add sheet's refusals and leftover magnets are drawn by the server. Cancelling an unfinished download now asks first, since it deletes what was written. Telegram messages are askama templates.
+
+### Fixed
+
+- **The garbage sweep no longer deletes files that were in the library before a download.** The record of which files were already there was held in memory, so after a restart the sweep treated a missing record as "nothing was there" and could delete a garbage-named file, such as artwork, that predated the download. The record is now kept in `STATE_DIR`, which the chart places on aria2's state volume, and a download with no record is not swept at all. The sweep moved from the notifier into `library`, beside cancel, and both decide which files a download wrote with one rule.
+- **The record of files already in the library fails closed further.** A listed path that cannot be looked at for any reason other than its absence is recorded as already there, so a permission error or an unreachable mount can no longer make a file look like the download's to delete. The record is flushed to the disk before it replaces the last one, so a power cut cannot leave an empty record in its place, and a record that cannot be read sweeps nothing.
+
+### Internal
+
+- **askama-analyzer formats the templates.** `mise run fmt` runs its formatter, and CI runs `askama-analyzer fmt --check` as an advisory step until a later change formats the templates and makes it blocking. mise installs the latest release with its release-age wait off for this tool alone, since it is maintained alongside these projects and CI should run the release the editor runs.
+
 ## 0.8.0
 
 ### Changed
