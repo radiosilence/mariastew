@@ -236,8 +236,9 @@ mod tests {
             &[("'+alert(1)+'", "/mnt/kontent/tv/'+alert(1)+'")],
         );
         assert!(!html.contains("'+alert(1)+'"), "{html}");
-        for line in html.lines().filter(|l| l.contains("data-on:")) {
-            assert!(!line.contains("alert(1)"), "{line}");
+        for (at, _) in html.match_indices("data-on:") {
+            let value = html[at..].split('"').nth(1).unwrap_or_default();
+            assert!(!value.contains("alert"), "{value}");
         }
     }
 
@@ -258,9 +259,13 @@ mod tests {
             !html.contains(&format!(">/mnt/kontent/movies/{tail}")),
             "{html}"
         );
+        let dir = html
+            .split('<')
+            .find(|tag| tag.contains(r#"name="dir""#))
+            .expect("the folder is submitted");
         assert!(
-            html.contains(&format!(r#"name="dir" value="/mnt/kontent/movies/{tail}""#)),
-            "{html}"
+            dir.contains(&format!(r#"value="/mnt/kontent/movies/{tail}""#)),
+            "{dir}"
         );
     }
 

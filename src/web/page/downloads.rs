@@ -495,12 +495,12 @@ mod tests {
         &html[start..end]
     }
 
-    /// A stream compares a row by its markup, so a download drawn twice from
-    /// the same state must come out the same, or every pass would send it.
+    /// A stream compares a row by its fingerprint, so a download drawn twice
+    /// from the same state must agree, or every pass would send it.
     #[test]
-    fn a_download_drawn_twice_is_the_same_markup() {
+    fn a_download_drawn_twice_has_one_fingerprint() {
         for d in [moving(), finished()] {
-            assert_eq!(draw(&d), draw(&d));
+            assert_eq!(fingerprint(&draw(&d)), fingerprint(&draw(&d)));
         }
     }
 

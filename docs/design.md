@@ -76,7 +76,7 @@ than a percentage:
 
 Per torrent, in the expanded row: the account of what happened to it, kept in
 memory by `src/activity.rs`. It exists because the interesting part of adding
-a magnet happens *here* and aria2 has never heard of it — `routes::finish_add`
+a magnet happens *here* and aria2 has never heard of it — `add::start`
 runs detached from the request that started it, and its resolve, its file
 selection and its failures went only to the pod's log. A magnet that never
 resolved left a row reading "starting" indefinitely with the explanation
@@ -155,7 +155,7 @@ the pod was down never had one; it is idempotent.
 ## What deletion is allowed to touch
 
 Two things delete from the library: the sweep above, and cancelling an
-unfinished download. Both go through `routes::remove_contained`, which unlinks
+unfinished download. Both go through `library::remove_contained`, which unlinks
 only a regular file inside a root, reached through no symlink below the root
 (`Config::resolve_unlinked`). A linked directory inside a root still lands
 somewhere else in the library, and a delete named for one release would act on
@@ -350,7 +350,7 @@ swarm, which is the old behaviour rather than a new failure.
 
 ### An add is two steps, and a restart can land between them
 
-`routes::finish_add` runs detached from the request that started it: aria2
+`add::start` runs detached from the request that started it: aria2
 resolves the metadata, and this waits for the download that comes out of it,
 narrows it to the files worth keeping, and starts it. A pod replaced inside
 that gap loses the second step alone — aria2's session restores the first.
@@ -382,7 +382,7 @@ Two earlier rules for this were wrong, and both failed silently:
 - **Only at startup.** A magnet that resolves a minute after boot produces its
   paused download a minute after boot, and a one-shot has long since run.
 
-The same restore is why `routes::follow` exists. An adopted add is usually
+The same restore is why `add::follow` exists. An adopted add is usually
 *already* the download it would have been followed to — the metadata pass is
 over, `followedBy` will never appear — so waiting for one is ten minutes of
 polling and a timeout with the download running unnarrowed throughout. aria2
@@ -390,7 +390,7 @@ tells the two apart: an unresolved magnet has no `bittorrent.info.name` and one
 file called `[METADATA]<dn>`, a real download has the torrent's own name and
 its real file list.
 
-Nothing the interface cleared comes back. `routes::clear` follows `remove` with
+Nothing the interface cleared comes back. `library::remove` follows `remove` with
 `removeDownloadResult` and keeps asking until aria2 answers that it holds no
 such gid, and a result aria2 no longer holds is not one it can save — which
 is the property `--force-save` would otherwise put at risk.
@@ -457,19 +457,20 @@ What reaches a page is diffed. Every row is hashed as it is rendered, and a
 stream sends only the rows whose hash moved since the copy *it* last sent — not
 since the previous snapshot, because a client too slow to collect every tick
 skips some and a row that changed in one it missed still has to arrive
-(`routes::unsent`). A seeding torrent is bytes on the wire exactly once. The
-one change a row patch cannot express is a download appearing, disappearing or
-changing place, since Datastar morphs by element id; that case sends the whole
-`#downloads` container instead, which is why `row.html` and `downloads.html`
-are the same markup rendered two ways.
+(`web::stream::downloads`). A seeding torrent is bytes on the wire exactly once.
+The one change a row patch cannot express is a download appearing, disappearing
+or changing place, since Datastar morphs by element id; that case sends the
+whole `#downloads` list instead, which draws each row from the same
+`downloads/download.html` a row patch is.
 
-A stream's first tick always sends the container, whatever the membership. It
-already did for any list with a row in it — nothing had been sent yet, so
-everything had — and doing it for an empty one too is what retires the
-unreachable warning: a snapshot exists only after aria2 has answered, so one
-arriving is the proof the page rendered on stale news.
+A stream does not begin by sending what the page already has. The page's body
+says which rows it drew, and a fingerprint of each, in the `seen` signal; a
+stream's first pass sends only the rows that changed since, and a stream that
+ends sets `seen` to what it drew, so the next carries on from there. A page
+that drew the unreachable warning has no rows to keep, so the first answer
+after it sends the list, which is what retires the warning.
 
-With nobody watching it drops to `IDLE_POLL_MS` and renders nothing. That
+With nobody watching it drops to `IDLE_POLL_MS`. That
 interval is the notifier's alone — it is looking for a download that finished
 or failed, and nothing about that is in a hurry — and the first page to open
 wakes the poller immediately rather than sitting out the rest of the sleep.
@@ -494,7 +495,8 @@ take every page's heartbeat down with it and reconnect all of them, to a server
 whose problem another connection does not solve.
 
 The page watches the quiet with askama_datastar's `reopen`, written onto an
-element of its own in `page.html`. Every five seconds while the page is shown
+element of its own in `layout.html` (`reopen_on`, which also opens it afresh
+when the address changes). Every five seconds while the page is shown
 it opens the stream again if the stream ended or has said nothing for 40
 seconds, two heartbeats' worth, and it reopens one that ended while the page
 was hidden as soon as the page is shown. A stream refused with 401, a session
@@ -502,12 +504,12 @@ the deploy ended, is not asked again until the page is next shown: no reconnect
 gets past that, and asking forever would be a request every five seconds for
 as long as the tab is open.
 
-The server ends each stream after ten minutes (`PACE` in `src/routes.rs`,
-through askama_datastar's `paced`), and the page opens the next. A socket that
-died without either end noticing would otherwise hold its viewer, and with it
-the poller's busy rate, for as long as TCP takes to give up. The lifetime is
-long because each new stream begins with the whole list, and the page shows
-nothing new for the few seconds before `reopen` sees the old one has ended.
+The server ends each stream after five minutes (`PACE` in
+`src/web/stream.rs`, through askama_datastar's `paced`), and the page opens the
+next. A socket that died without either end noticing would otherwise hold its
+viewer, and with it the poller's busy rate, for as long as TCP takes to give
+up. The lifetime is longer than slsk-mcp's minute because the bars stand still
+for the few seconds before `reopen` sees the old stream has ended.
 
 ## Seeding, and why cancel has two meanings
 
@@ -517,13 +519,13 @@ torrent therefore never leaves aria2's active list on its own; it just stops
 receiving and starts only uploading. That is why the UI tracks "finished" as
 a property of a still-active row (`Download::is_finished` in `src/aria2.rs`)
 rather than a separate list, and why the remove button means two different
-things depending on that property (`routes::remove`): on an unfinished
+things depending on that property (`library::remove`): on an unfinished
 download it deletes what the torrent wrote along with the aria2 entry — a
 half-downloaded episode sitting in the library is the mess this avoids, and
 what it may not delete is the previous section's subject — and
 on a finished one it only stops seeding, leaving the files in place: that is
 stopping an upload, not undoing a download, and deleting the episode would be
-astonishing. The finished button says **Done** rather than "stop seeding" —
+astonishing. The finished button says **clear** rather than "stop seeding" —
 what it means to whoever presses it is that they are finished with the row,
 and it keeps every file, which is the opposite of what the destructive button
 in the same slot on an unfinished row does.
@@ -536,7 +538,7 @@ refused for a moment after the first succeeds. Starting with `remove` and
 giving up when it failed is what made the button look dead: an errored row and
 a torrent aria2 had stopped seeding are both already-stopped, so the call that
 would have worked was never reached, and the row stayed with a button that
-could only fail again. `routes::clear` runs both in the order that applies and
+could only fail again. `library::remove` runs both in the order that applies and
 keeps asking until aria2 answers `tellStatus` for the gid with "not found",
 rather than trusting either call's return.
 

@@ -307,6 +307,44 @@ mod tests {
         }
     }
 
+    /// A template naming a helper `web/ms.ts` does not define throws at click
+    /// time and nowhere else, since no build step sees both halves.
+    #[test]
+    fn every_ms_helper_the_sheet_calls_is_defined() {
+        const SOURCE: &str = include_str!("../../../../web/ms.ts");
+        const BUNDLE: &str = include_str!("../../../../assets/app.js");
+        let sheet = Sheet {
+            magnets: Magnets::blank().draw(),
+            error: Html::new(),
+            destination: Html::new(),
+        }
+        .draw();
+        let html = sheet.as_str();
+        let called: std::collections::BTreeSet<&str> = html
+            .match_indices("ms.")
+            .filter(|(i, _)| {
+                html[..*i]
+                    .chars()
+                    .next_back()
+                    .is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '$' && c != '.')
+            })
+            .filter_map(|(i, _)| html[i + 3..].split_once('('))
+            .map(|(name, _)| name)
+            .collect();
+        assert!(!called.is_empty(), "no ms.* helper calls found: {html}");
+        for name in called {
+            let call = format!("{name}(");
+            assert!(
+                SOURCE.contains(&call),
+                "web/ms.ts does not define ms.{name}()"
+            );
+            assert!(
+                BUNDLE.contains(&call),
+                "the committed bundle lacks ms.{name}(); run `mise run js`"
+            );
+        }
+    }
+
     #[test]
     fn a_partly_refused_batch_says_how_much_went_in_and_why_the_rest_did_not() {
         assert_eq!(

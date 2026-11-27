@@ -154,21 +154,23 @@ mod tests {
         use axum::http::{Request, StatusCode};
         use tower::ServiceExt;
 
-        let response = router(AppState::fixture(String::new()))
+        let state = AppState::fixture(String::new());
+        let session = state
+            .sessions
+            .create("tester", std::time::Duration::from_secs(60))
+            .await;
+        let response = router(state)
             .oneshot(
                 Request::post("/downloads/abc/pause")
+                    .header(
+                        header::COOKIE,
+                        format!("{}={session}", crate::auth::cookie::SESSION_COOKIE),
+                    )
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert!(
-            matches!(
-                response.status(),
-                StatusCode::FORBIDDEN | StatusCode::UNAUTHORIZED
-            ),
-            "{}",
-            response.status()
-        );
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 }

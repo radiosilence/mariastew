@@ -48,13 +48,37 @@ impl Seen {
     }
 }
 
-/// A short hash of `markup` (FNV-1a), stable across builds, so a page drawn by
-/// one process and a stream opened on the same one agree on it.
+/// A short hash (FNV-1a) of `markup` as a stream compares it ([`unnamed`]),
+/// stable across builds, so a page and the stream after it agree on it.
 pub(in crate::web) fn fingerprint(markup: &str) -> String {
-    let hash = markup.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
-        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
-    });
+    let hash = unnamed(markup)
+        .bytes()
+        .fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+        });
     format!("{hash:016x}")
+}
+
+/// Markup without the busy signals' names. The kit names each request
+/// button's own busy signal afresh on every render, so a row drawn twice from
+/// the same state differs only in those; left in, every pass would send every
+/// row. A row sent for another change brings its new names with it.
+fn unnamed(html: &str) -> String {
+    const SIGNAL: &str = "_busy";
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(at) = rest.find(SIGNAL) {
+        let (before, after) = rest.split_at(at + SIGNAL.len());
+        out.push_str(before);
+        let hex = after
+            .bytes()
+            .take(12)
+            .take_while(u8::is_ascii_hexdigit)
+            .count();
+        rest = if hex == 12 { &after[12..] } else { after };
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Which of `now`'s rows the page does not have, or `None` when the list
@@ -181,6 +205,18 @@ mod tests {
         };
         assert_eq!(list.draw(&state, &back).len(), 1);
         assert!(list.draw(&state, &back).is_empty());
+    }
+
+    #[test]
+    fn a_fingerprint_ignores_the_busy_signals_names_and_nothing_else() {
+        assert_eq!(
+            fingerprint(r#"<b data-indicator="_busy0123456789ab">x</b>"#),
+            fingerprint(r#"<b data-indicator="_busyba9876543210">x</b>"#)
+        );
+        assert_ne!(
+            fingerprint(r#"<b data-indicator="_busy0123456789ab">x</b>"#),
+            fingerprint(r#"<b data-indicator="_busy0123456789ab">y</b>"#)
+        );
     }
 
     #[test]
