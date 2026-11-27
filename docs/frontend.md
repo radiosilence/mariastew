@@ -19,7 +19,7 @@ reached through `data-ref` rather than `document.getElementById`, so a template
 holds one definition of what an id is.
 
 That boundary is a lint and typecheck boundary, not a taste one. `web/app.ts`
-is source; `assets/app-<hash>.js` is its bundled, committed output (see "Rebuilding
+is source; `assets/app.js` is its bundled, committed output (see "Rebuilding
 the browser script" below) and, like the stylesheet and the vendored bundle, is
 a build artefact oxlint, oxfmt and `tsc` all ignore by name. JavaScript written
 inside an attribute is seen by nothing at all until a browser runs it.
@@ -236,16 +236,18 @@ it, where the stylesheet's relative font URL points. The server embeds both.
 
 ## Rebuilding the browser script
 
-Same deal as the stylesheet: `web/` is source and `assets/app-<hash>.js` is
+Same deal as the stylesheet: `web/` is source and `assets/app.js` is
 the committed output, so only editing the source needs Node:
 
 ```sh
 mise run js
 ```
 
-rolldown bundles `web/main.ts` into one minified file whose name carries a
-content hash, so a deploy's new script cannot be served from a cache holding
-the old one; `build.rs` finds it and `main.rs` serves it.
+rolldown bundles `web/main.ts` into one minified file. `main.rs` embeds it as
+an askama_datastar `Asset`, as it does the stylesheet, typeface and icons, and
+the page names each by an address carrying a hash of its bytes, so a browser
+caches it for good and a deploy's page fetches the new copy rather than a
+stale one.
 
 Datastar is not in the bundle. It is the copy the `askama_datastar` crate
 vendors and pins, served at `/assets/datastar.js` under a hash of its contents,

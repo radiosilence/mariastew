@@ -132,10 +132,9 @@ jobs:
             echo "changes since $(git rev-parse --short "$base"):"
             printf '%s\n' "$files" | sed 's/^/  /'
             # Anything cargo compiles or that decides how. The server embeds
-            # its templates and the committed assets, and build.rs names the
-            # script bundle, so they are Rust too. mise.toml pins the
+            # its templates and the committed assets, so they are Rust too. mise.toml pins the
             # toolchain `check` runs; no other job reads it.
-            touches '^src/|^templates/|^assets/|^build\.rs$|^Cargo\.(toml|lock)$|^mise\.toml$|^\.github/' || rust=false
+            touches '^src/|^templates/|^assets/|^Cargo\.(toml|lock)$|^mise\.toml$|^\.github/' || rust=false
             # The browser bundle, the stylesheet and the toolchain that builds
             # them, plus everything they are generated from (`src/` names
             # classes too) or lint covers.
@@ -149,7 +148,7 @@ jobs:
             if [ "$EVENT" = "pull_request" ]; then
               touches '^Dockerfile$|^Cargo\.lock$|^\.github/' || docker=false
             else
-              touches '^src/|^templates/|^assets/|^build\.rs$|^Cargo\.(toml|lock)$|^Dockerfile$|^\.github/' || docker=false
+              touches '^src/|^templates/|^assets/|^Cargo\.(toml|lock)$|^Dockerfile$|^\.github/' || docker=false
             fi
           fi
           {

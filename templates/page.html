@@ -18,50 +18,18 @@
      stylesheet: the sign-in page needs an icon too, and a manifest is fetched
      without credentials by default, so one behind the layer would answer the
      install prompt with a login redirect. #}
-<link rel="icon" href="/assets/favicon.ico" sizes="32x32">
-<link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
-<link rel="manifest" href="/assets/manifest.webmanifest">
+<link rel="icon" href="{{ crate::asset_url("/assets/favicon.ico") }}" sizes="32x32">
+<link rel="icon" href="{{ crate::asset_url("/assets/icon.svg") }}" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{{ crate::asset_url("/assets/apple-touch-icon.png") }}">
+<link rel="manifest" href="{{ crate::asset_url("/assets/manifest.webmanifest") }}">
 <meta name="theme-color" content="#1e1e1e" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<link rel="stylesheet" href="/assets/app.css">
-<script type="module" src="{{ self.app_js_path() }}"></script>
+<link rel="stylesheet" href="{{ crate::asset_url("/assets/app.css") }}">
+<script type="module" src="{{ crate::asset_url("/assets/app.js") }}"></script>
 {# After the app's: module scripts run in document order, and `ms` has to exist
    before Datastar compiles the expressions that call it. #}
 <script type="module" src="{{ self.datastar_js_path() }}"></script>
 </head>
-{# The stream reopens itself, by two attributes doing one job.
-
-     A stream can stop without anybody being told. Datastar reads a finished 200
-     body as the request being over, so a pod replaced under an open page ends
-     it for good; and a socket can simply stop carrying bytes, which is what a
-     suspended phone hands back, and which Datastar cannot see at all — it still
-     believes the request is live. Its own belief is therefore the one thing
-     this must not consult (#386, #390).
-
-     `data-on-interval` is the mechanism: the server sends a heartbeat on a
-     cadence (`routes::HEARTBEAT`), `ms.streamEvent` records every frame that
-     arrives, and `ms.streamLost` answers whether the quiet has gone on too
-     long. Silence is the only evidence a client has, and the heartbeat is what
-     makes silence mean something — the list is legitimately still while nothing
-     is downloading.
-
-     A 401 stops it instead, because that is not a stream fault: the deploy that
-     ends the stream is usually the one that signs the page out, and no
-     reconnect gets past that. Left running it would ask forever, since the
-     asking is itself one of the frames that resets the clock.
-
-     `data-on:visibilitychange` is the same reconnect on the one occasion worth
-     not waiting for: a phone coming back into the hand, where the timeout would
-     otherwise be spent staring at a stale screen. Unconditional, because that
-     is precisely where liveness cannot be judged. It costs one redundant
-     reconnect per return — `requestCancellation` defaults to aborting the
-     in-flight request to the same URL, so there is still one stream — and its
-     first tick is the whole container, which is the fresh data being asked for.
-
-     The `datastar-fetch` handler is filtered to this element because it hears
-     every request the page makes, and the picker's `@get('/browse')` arriving
-     is no evidence the stream is up. #}
 {# `$_addStatus` and `$_addMessage` are the whole contract with the server for
      this form: POST /add answers with a JSON body, which Datastar treats as a
      signal patch on its own (Content-Type: application/json is all it takes, no
@@ -83,11 +51,15 @@
      with every request unless they are prefixed so, and the server reads
      none of them; otherwise every `/stream` reconnect would carry each row's
      indicator signals in its query string. #}
-<body data-init="@get('/stream')"
-  data-on:datastar-fetch="evt.detail.el === el && ms.streamEvent(evt)"
-  data-on-interval__duration.5s="ms.streamLost() && @get('/stream')"
-  data-on:visibilitychange__document="!document.hidden && @get('/stream')"
-  data-signals__ifmissing="{_addStatus: '', _addMessage: '', _addDone: []}">
+<body data-signals__ifmissing="{_addStatus: '', _addMessage: '', _addDone: []}">
+{# The live stream, opened by askama_datastar's `reopen` on an element of its
+     own, which opens it again once it ends or has been silent for two of the
+     server's heartbeats. A stream can stop without anybody being told: a pod
+     replaced under an open page ends it, and a suspended phone's socket stops
+     carrying bytes while Datastar still believes it live (#386, #390). A 401,
+     a session the deploy ended, is not asked again until the page is shown
+     after being hidden. #}
+<div hidden{{ self.live() }}></div>
 
 {# The header is the primary action, not a name plus an action — the person
      already knows what they opened, and the name would only spend the
