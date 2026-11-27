@@ -7,7 +7,7 @@ actionlint = "1.7.12"
 shellcheck = "0.11.0"
 just = "latest"
 aube = "2.8.5"
-# Formats and checks the askama templates (`mise run fmt`, CI's check job), as the editor does.
+# Formats the askama templates (`mise run fmt`) and checks them in CI, as the editor does.
 # Our own tool, so mise's wait before installing a new release is off: CI runs the
 # release the editor runs.
 "github:radiosilence/askama-analyzer" = { version = "latest", minimum_release_age = "0" }

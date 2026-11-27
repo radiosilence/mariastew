@@ -222,7 +222,7 @@ jobs:
       # Advisory until the templates are formatted; it becomes blocking then.
       - run: askama-analyzer fmt --check
         continue-on-error: true
-      - run: cargo fmt --check &&cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
+      - run: cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
 
   # The TypeScript and the committed assets built from it. Assets are
   # committed so `cargo build` needs no Node, which only holds while they
