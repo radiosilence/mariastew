@@ -1,0 +1,28 @@
+{#- A sheet: pinned to the bottom edge on a phone, where a thumb already is. It closes itself when the server says the
+    batch went in (`$_added`), and closing, by cancel, a tap outside or Escape alike, asks for the sheet fresh, since
+    closing is the moment an attempt is abandoned. The add button sits in the footer, outside the form it sends, so
+    the form names it (`sends`), which also makes Enter in a field press it.
+
+    The folder name and its parent belong to `#mkdir-form`, not to `#add-form` they sit inside (`form=` on each): a
+    control left in the add form would be checked against the magnet rows and sent with them. #}
+{% filter kit::wrap(
+    kit::Sheet::new("add", "add a download")
+        .close("cancel")
+        .action(kit::Button::primary("add").post("/add").sends("add-form"))
+        .datastar("effect", "$_added && el.close()")
+        .datastar("on:close", "$_added = false, @get('/add')")
+) %}
+{% let form = kit::Form::post("/add").id("add-form") %}
+<form {{ form.attrs() }} class="flex flex-col gap-4">
+  {{ magnets }}
+  {{ kit::Button::quiet("another magnet").icon(kit::icon::PLUS).datastar("on:click", "ms.addMagnetRow(document.getElementById('magnets'))").class("self-start") }}
+  {#- The destination is real but secondary, so it starts folded behind the magnet field rather than putting a
+      directory tree in front of someone who has not pasted anything yet. #}
+  {% filter kit::wrap(kit::Disclosure::new("destination")) %}
+  {{ destination }}
+  {% endfilter %}
+</form>
+{% let mkdir = kit::Form::post("/mkdir").id("mkdir-form") %}
+<form {{ mkdir.attrs() }} hidden></form>
+{{ error }}
+{% endfilter %}

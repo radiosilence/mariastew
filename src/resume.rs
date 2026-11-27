@@ -2,7 +2,7 @@
 //!
 //! Adding a magnet is two steps with a gap in the middle: aria2 resolves the
 //! metadata and creates the real download paused (`--pause-metadata`), and
-//! `routes::finish_add` — detached from the request that asked for it — reads
+//! `add::start` — detached from the request that asked for it — reads
 //! the file list, narrows it to what is worth keeping, and releases it. The
 //! second step lives in one process's memory and nothing restores it, so a pod
 //! replaced inside the gap leaves a download aria2 will hold, paused, forever.
@@ -11,7 +11,7 @@
 //! to resolve, and a resolve is minutes on a sparse swarm.
 //!
 //! **An unfinished add is a paused download with no `select-file`.** aria2
-//! holds that mark, `routes::finish_add_inner` writes it exactly once at the
+//! holds that mark, `add::start_inner` writes it exactly once at the
 //! end of the sequence, and nothing else writes it at all — so its absence is
 //! the difference between a download waiting to be finished and one somebody
 //! deliberately paused, without inferring anything from names or byte counts.
@@ -32,8 +32,8 @@
 
 use std::collections::HashSet;
 
+use crate::add;
 use crate::aria2::{Download, Status};
-use crate::routes::finish_add_inner;
 use crate::state::{AppState, Claim};
 
 /// Watches the poll for downloads with nobody finishing them.
@@ -118,7 +118,7 @@ async fn adopt(state: AppState, claim: Claim, gid: String, dir: String) {
 
     // Only a resolving magnet is released here, since a paused one fetches no
     // metadata. A real download is narrowed first and released by
-    // `finish_add_inner`, which also records what was on disk while it is
+    // `add::finish`, which also records what was on disk while it is
     // still paused; releasing it here would start it with no selection.
     let released = match state.aria2.tell_status(&gid).await {
         Ok(d) if d.is_metadata() => state.aria2.unpause(&gid).await,
@@ -131,12 +131,12 @@ async fn adopt(state: AppState, claim: Claim, gid: String, dir: String) {
         return;
     }
 
-    // Dropped before the finish rather than held across it: `finish_add_inner`
+    // Dropped before the finish rather than held across it: `add::finish`
     // takes its own claim on the same gid, and this one has done its job the
     // moment that exists.
     drop(claim);
 
-    if let Err(e) = finish_add_inner(&state, "restart", &dir, &gid).await {
+    if let Err(e) = add::finish(&state, "restart", &dir, &gid).await {
         tracing::error!(%gid, error = %e, "resume: could not finish an interrupted add");
         state.activity.record(&gid, format!("failed — {e}"));
     }
@@ -163,7 +163,7 @@ mod tests {
         /// somebody paused on purpose.
         has_selection: bool,
         /// Whether the adopted gid still has a metadata pass to be followed to
-        /// its download, or *is* that download already — see `routes::follow`.
+        /// its download, or *is* that download already — see `add::follow`.
         resolves_to_child: bool,
         /// Answers `tellStatus` with a status aria2 never sends, so every
         /// adoption fails.
@@ -198,7 +198,7 @@ mod tests {
         fn answer(mock: &Mock, body: &serde_json::Value) -> serde_json::Value {
             let gid = body["params"][0].as_str().unwrap_or_default().to_string();
             // aria2 reports a released download as running, so the mock has to
-            // as well: `finish_add_inner` reads the status back to decide
+            // as well: `add::finish` reads the status back to decide
             // whether there is a pause left to undo, and a mock frozen at
             // "paused" would let a double release through unnoticed.
             let released = |g: &str| mock.unpaused.lock().unwrap().iter().any(|u| u == g);
@@ -289,7 +289,6 @@ mod tests {
     }
 
     fn state_for(url: String) -> AppState {
-        let http = reqwest::Client::new();
         AppState {
             config: Arc::new(Config {
                 aria2_rpc_url: url.clone(),
@@ -298,14 +297,7 @@ mod tests {
                 idle_poll_interval: Duration::from_millis(10),
                 ..Config::fixture()
             }),
-            aria2: crate::aria2::Aria2::new(url, http.clone()),
-            sessions: crate::auth::session::Sessions::new(),
-            poll: crate::poll::Poll::new(),
-            activity: crate::activity::Activity::new(),
-            clearing: crate::state::Clearing::default(),
-            adding: crate::state::Adding::default(),
-            preexisting: Default::default(),
-            http,
+            ..AppState::fixture(url)
         }
     }
 

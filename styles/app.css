@@ -2,10 +2,10 @@
  * mariastew's stylesheet, compiled by Tailwind into assets/app.css (`just css`). The compiled file is committed: the
  * binary embeds it, and building mariastew must not need Node.
  *
- * The look is kōan's (radiosilence/koan, docs/design/koan-theme.md), and @radiosilence/koan-kit-web draws it: the tokens, the
- * element defaults and the kit of controls (button weights, notice, status, meter, spinner, skeleton, disclosure,
- * sheet). What is here is only what is particular to mariastew: its accent, the watermark, the icon class and the
- * picker's directory entry.
+ * The look is kōan's (radiosilence/koan, docs/design/koan-theme.md). The koan-kit-web crate's components write the
+ * controls and its stylesheet, imported from the crate's source through the `kit` link `just kit` makes, draws them, so
+ * one version in Cargo.lock names both. What is here is only what is particular to mariastew: its accent and the
+ * watermark.
  *
  * Sources are named rather than detected: detection scans every file git does not ignore, Markdown included, so a doc
  * mentioning a class name would change the stylesheet.
@@ -13,8 +13,7 @@
 @import "tailwindcss" source(none);
 @source "../templates";
 @source "../src";
-@source "../web";
-@import "@radiosilence/koan-kit-web";
+@import "./kit/theme.css";
 
 /* The accent is the stew in icons/icon.svg: its amber on dark, 6.7:1 on --surface, and the same hue darkened to read on
  * light, 5.1:1 on --surface. */
@@ -25,14 +24,6 @@
 @media (prefers-color-scheme: light) {
   :root {
     --brand: #975800;
-  }
-}
-
-@layer components {
-  /* A row of a list that is itself the button: a directory in the picker. Its label is a name on disk, so it keeps
-   * its case. */
-  .entry {
-    @apply block w-full border-0 px-3 py-2 text-left text-control normal-case break-words;
   }
 }
 
@@ -73,26 +64,5 @@
     background-position: center;
     background-size: min(96vmin, 620px);
     background-attachment: fixed;
-  }
-}
-
-/* Lucide's own presentation attributes, hoisted off every icon in
-   templates/icons.html onto one class — what differs between icons is the
-   path, and repeating six attributes per glyph would bury it. Sized in `em`
-   so an icon is always the size of the text it sits beside, and nudged off
-   the baseline so it centres on it. In `components` so a utility class passed
-   to a macro still wins. */
-@layer components {
-  .icon {
-    display: inline-block;
-    width: 1em;
-    height: 1em;
-    vertical-align: -0.125em;
-    flex: none;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
   }
 }

@@ -2,7 +2,7 @@
 //!
 //! aria2 holds the queue and this service holds nothing — except that the
 //! interesting part of adding a magnet happens *here*, detached from the
-//! request that started it (`routes::finish_add`), and aria2 has never heard
+//! request that started it (`add::start`), and aria2 has never heard
 //! of any of it. Resolving, choosing which files to keep, applying the
 //! selection, and giving up were visible only in the pod's log, so a row
 //! sitting on "starting" looked identical whether it was waiting on a sparse
@@ -32,7 +32,8 @@ pub struct Entry {
     /// Wall clock, not `Instant`. A log is read as "what happened, and when",
     /// and an elapsed count answers a different question — every line saying
     /// "2m" tells you nothing about the order or the gaps, which are the two
-    /// things a log is for. See `views::LogView` for what renders it.
+    /// things a log is for. The page shows it as a clock time in the reader's
+    /// own zone.
     pub at: SystemTime,
     pub message: String,
 }

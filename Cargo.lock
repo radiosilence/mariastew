@@ -913,6 +913,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "koan-kit-web"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff5113a0c640050981f557dbc3e1109918d5da2a2d00a4d5154f49176266146e"
+dependencies = [
+ "askama",
+ "askama_datastar",
+ "axum",
+ "base64",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -954,6 +968,7 @@ dependencies = [
  "axum-extra",
  "base64",
  "futures-util",
+ "koan-kit-web",
  "rand",
  "reqwest",
  "serde",

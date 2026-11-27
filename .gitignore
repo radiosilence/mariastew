@@ -16,5 +16,5 @@ dev-data/
 # `include_bytes!` reads at compile time and `build.rs` names, so a checkout
 # without it does not compile. Same standing as `assets/app.css`.
 
-# Written by `just auth`; holds a GitHub Packages token.
-/.npmrc.auth
+# The link `just kit` makes to koan-kit-web's source.
+/styles/kit

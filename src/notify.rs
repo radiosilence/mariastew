@@ -18,11 +18,12 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use askama::Template;
+
 use crate::aria2::{Download, Health, Status};
 use crate::filter;
-use crate::routes;
+use crate::library;
 use crate::state::AppState;
-use crate::views;
 
 struct Seen {
     announced: bool,
@@ -97,7 +98,7 @@ pub fn spawn_watcher(state: AppState) {
                 if let Some(previous) = previous
                     && previous.health != health
                 {
-                    state.activity.record(&d.gid, views::state_word(health));
+                    state.activity.record(&d.gid, health.word());
                 }
 
                 let terminal = d.status == Status::Error || d.is_finished();
@@ -158,7 +159,7 @@ async fn sweep_garbage(state: &AppState, d: &Download) {
             || f.completed_length == 0
             || !path.starts_with(dir)
             || path == dir
-            || !routes::remove_contained(state, &f.path).await
+            || !library::remove_contained(state, &f.path).await
         {
             continue;
         }
@@ -171,14 +172,7 @@ async fn sweep_garbage(state: &AppState, d: &Download) {
             .record(&d.gid, format!("deleted junk — {}", f.path));
         deleted.push(path.to_path_buf());
     }
-    routes::remove_emptied_dirs(state, dir, &deleted).await;
-}
-
-/// Escape for Telegram HTML. `&` first to avoid double-escaping entities.
-pub fn esc(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
+    library::remove_emptied_dirs(state, dir, &deleted).await;
 }
 
 async fn send(state: &AppState, text: &str) {
@@ -201,14 +195,38 @@ async fn send(state: &AppState, text: &str) {
     }
 }
 
+/// A download that finished, in Telegram's HTML. The `.html` extension is what
+/// makes askama escape the name and the path, which Telegram would otherwise
+/// read as markup.
+#[derive(Template)]
+#[template(path = "notify/finished.html")]
+struct Finished<'a> {
+    name: &'a str,
+    dir: &'a str,
+}
+
+/// A download that failed, in Telegram's HTML.
+#[derive(Template)]
+#[template(path = "notify/failed.html")]
+struct Failed<'a> {
+    name: &'a str,
+    error: &'a str,
+}
+
+/// Sends `message`, or logs why it could not be drawn.
+async fn announce(state: &AppState, message: impl Template) {
+    match message.render() {
+        Ok(text) => send(state, &text).await,
+        Err(e) => tracing::warn!(error = %e, "could not draw a telegram notification"),
+    }
+}
+
 pub async fn finished(state: &AppState, name: &str, dir: &str) {
-    let text = format!("<b>{}</b>\nfinished — {}", esc(name), esc(dir));
-    send(state, &text).await;
+    announce(state, Finished { name, dir }).await;
 }
 
 pub async fn failed(state: &AppState, name: &str, error: &str) {
-    let text = format!("<b>{}</b>\nfailed — {}", esc(name), esc(error));
-    send(state, &text).await;
+    announce(state, Failed { name, error }).await;
 }
 
 #[cfg(test)]
@@ -216,8 +234,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::aria2::{Aria2, File};
-    use crate::auth::session::Sessions;
+    use crate::aria2::File;
     use crate::config::{Config, Root};
 
     fn file(index: u32, path: &str, selected: bool) -> File {
@@ -250,14 +267,7 @@ mod tests {
                 }],
                 ..Config::fixture()
             }),
-            aria2: Aria2::new(String::new(), reqwest::Client::new()),
-            sessions: Sessions::new(),
-            activity: crate::activity::Activity::new(),
-            poll: crate::poll::Poll::new(),
-            clearing: crate::state::Clearing::default(),
-            adding: Default::default(),
-            preexisting: Default::default(),
-            http: reqwest::Client::new(),
+            ..AppState::fixture(String::new())
         }
     }
 
@@ -293,17 +303,13 @@ mod tests {
         };
         let reachable = |downloads: Vec<Download>| crate::poll::Snapshot {
             downloads: Some(Arc::new(downloads)),
-            view: None,
         };
         spawn_watcher(state.clone());
         tokio::task::yield_now().await;
 
         for snapshot in [
             reachable(vec![finished.clone()]),
-            crate::poll::Snapshot {
-                downloads: None,
-                view: None,
-            },
+            crate::poll::Snapshot { downloads: None },
             reachable(vec![finished.clone(), fresh]),
         ] {
             state.poll.publish(snapshot);
@@ -582,19 +588,32 @@ mod tests {
         let _ = tokio::fs::remove_dir_all(&elsewhere).await;
     }
 
+    /// Telegram reads the message as HTML, so a name or a reason with markup
+    /// in it is escaped exactly once, and the message's own markup is not.
     #[test]
-    fn esc_escapes_all_three_markup_characters() {
-        assert_eq!(
-            esc("<b>Tom & Jerry</b>"),
-            "&lt;b&gt;Tom &amp; Jerry&lt;/b&gt;"
-        );
-    }
-
-    /// Escaping `&` first means the entities this just produced for `<` and
-    /// `>` never get run back through the `&` replacement.
-    #[test]
-    fn esc_does_not_double_escape_the_entities_it_just_wrote() {
-        assert_eq!(esc("<"), "&lt;");
-        assert_eq!(esc(">"), "&gt;");
+    fn a_notification_escapes_the_download_and_keeps_its_own_markup() {
+        use askama_datastar::escaping::{Guard, escaped};
+        const HOSTILE: &str = r#"<em>Tom & "Jerry"</em>"#;
+        let guard = Guard::new(&[HOSTILE])
+            .templates(concat!(env!("CARGO_MANIFEST_DIR"), "/templates/notify"))
+            .unwrap();
+        for text in [
+            Finished {
+                name: HOSTILE,
+                dir: HOSTILE,
+            }
+            .render()
+            .unwrap(),
+            Failed {
+                name: HOSTILE,
+                error: HOSTILE,
+            }
+            .render()
+            .unwrap(),
+        ] {
+            assert_eq!(guard.problems(&text), [], "{text}");
+            assert!(text.starts_with("<b>"), "{text}");
+            assert!(text.contains(&escaped(HOSTILE)), "{text}");
+        }
     }
 }

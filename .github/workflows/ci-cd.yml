@@ -138,7 +138,7 @@ jobs:
             # The browser bundle, the stylesheet and the toolchain that builds
             # them, plus everything they are generated from (`src/` names
             # classes too) or lint covers.
-            touches '^web/|^styles/|^templates/|^src/|^assets/|^scripts/.*\.ts$|^deploy/pulumi/src/|^package\.json$|^aube-lock\.yaml$|^\.npmrc$|^justfile$|^tsconfig\.web\.json$|^mise\.toml$|^\.github/' || web=false
+            touches '^web/|^styles/|^templates/|^src/|^assets/|^scripts/.*\.ts$|^deploy/pulumi/src/|^package\.json$|^aube-lock\.yaml$|^Cargo\.lock$|^justfile$|^tsconfig\.web\.json$|^mise\.toml$|^\.github/' || web=false
             touches '^deploy/pulumi/|^\.github/' || package=false
             # The static binaries and the image that copies them in. `check`
             # already checks the code, so a pull request builds these only
@@ -232,15 +232,10 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      # @radiosilence/koan-kit-web is on GitHub Packages, which wants a token even to read.
-      packages: read
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
-      # Only this step sees the token; `just css` below finds .npmrc.auth already written.
-      - run: just auth && aube ci
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: aube ci
       - run: mise run lint
       - run: mise run typecheck:web
       - run: just css && mise run js

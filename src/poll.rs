@@ -1,58 +1,29 @@
-//! One poll of aria2 for the whole process, rendered once for everyone.
+//! One poll of aria2 for the whole process.
 //!
 //! aria2 has no notification for byte-level progress, so the only way to show
-//! a moving bar is to ask. How often that can be asked is the question this
-//! module exists to answer, and the answer used to be "once a second", because
-//! the asking was per open page: every stream ran its own three RPC calls and
-//! its own render, so the cost of going faster was multiplied by however many
-//! tabs happened to be open, and the cost of a phone left on a bedside table
-//! was the same as one being watched.
+//! a moving bar is to ask. The asking used to be per open page: every stream
+//! ran its own RPC calls, so the cost of going faster was multiplied by however
+//! many tabs were open, and a phone left on a bedside table cost the same as
+//! one being watched.
 //!
-//! Here it is one task. The RPC and the render happen once per tick no matter
-//! how many people are looking, which is what makes the rate a thing that can
-//! be turned up at all — and nobody looking is a case worth having, so a
-//! process with no viewers falls back to sampling for the notifier's benefit
-//! alone (`IDLE_POLL_MS`) and renders nothing.
-//!
-//! What reaches a viewer is diffed, because at this rate resending the list is
-//! the expensive part rather than producing it. Every row is hashed as it is
-//! rendered; a stream sends only the rows whose hash moved since the copy it
-//! last sent. A seeding torrent is bytes on the wire exactly once.
+//! Here it is one task. The RPC happens once per tick however many pages are
+//! open, at the page's rate (`POLL_MS`) while anyone is watching and at the
+//! notifier's (`IDLE_POLL_MS`) while nobody is. What a page is shown is the
+//! web layer's business: each live stream draws the snapshots it reads, and
+//! sends only what changed.
 
-use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use askama::Template;
 use tokio::sync::{Notify, watch};
 
 use crate::aria2::Download;
-use crate::routes::all_downloads;
 use crate::state::AppState;
-use crate::views;
-
-/// A row's markup hashed to detect changes without string retention.
-pub struct RenderedRow {
-    pub gid: String,
-    pub hash: u64,
-    pub html: Arc<str>,
-}
-
-/// Rows and their container. Both sent because morph-by-id can't add/remove
-/// elements — only changes need to return full container.
-pub struct View {
-    pub rows: Vec<RenderedRow>,
-    pub full: Arc<str>,
-    /// `full` is the unreachable warning rather than a list.
-    pub unreachable: bool,
-}
 
 pub struct Snapshot {
     /// `None` when aria2 did not answer. Readers that act on transitions skip
     /// these: an outage is not every download disappearing.
     pub downloads: Option<Arc<Vec<Download>>>,
-    /// None when no viewers or render fails.
-    pub view: Option<View>,
 }
 
 #[derive(Clone)]
@@ -69,10 +40,7 @@ pub struct Poll {
 
 impl Poll {
     pub fn new() -> Self {
-        let (tx, _) = watch::channel(Arc::new(Snapshot {
-            downloads: None,
-            view: None,
-        }));
+        let (tx, _) = watch::channel(Arc::new(Snapshot { downloads: None }));
         Self {
             tx: Arc::new(tx),
             viewers: Arc::new(AtomicUsize::new(0)),
@@ -86,7 +54,8 @@ impl Poll {
         self.closing.send_replace(true);
     }
 
-    /// Snapshots without rendering (for the notifier).
+    /// Every snapshot from now on, for a reader that is not a page: the
+    /// notifier and the reconciler.
     pub fn subscribe(&self) -> watch::Receiver<Arc<Snapshot>> {
         self.tx.subscribe()
     }
@@ -97,7 +66,7 @@ impl Poll {
         self.viewers.load(Ordering::Relaxed) > 0
     }
 
-    /// Registers a viewer — poller renders at page rate. Drop to fall back to idle.
+    /// An open page: the poller samples at the page's rate until it drops.
     pub fn viewer(&self) -> Viewer {
         self.viewers.fetch_add(1, Ordering::Relaxed);
         self.woken.notify_one();
@@ -151,14 +120,13 @@ pub fn spawn(state: AppState) {
                 }
             }
 
-            let snapshot = match all_downloads(&state).await {
+            let snapshot = match state.aria2.downloads().await {
                 Ok(downloads) => {
                     if failures > 0 {
                         tracing::info!(failures, "poll: aria2 answering again");
                     }
                     failures = 0;
                     Snapshot {
-                        view: watched.then(|| render(&state, &downloads)).flatten(),
                         downloads: Some(Arc::new(downloads)),
                     }
                 }
@@ -174,10 +142,7 @@ pub fn spawn(state: AppState) {
                     if failures < OUTAGE_AFTER {
                         continue;
                     }
-                    Snapshot {
-                        downloads: None,
-                        view: watched.then(render_unreachable).flatten(),
-                    }
+                    Snapshot { downloads: None }
                 }
             };
             let _ = state.poll.tx.send(Arc::new(snapshot));
@@ -188,68 +153,11 @@ pub fn spawn(state: AppState) {
 /// Consecutive failed polls before aria2 is reported unreachable.
 const OUTAGE_AFTER: u32 = 3;
 
-/// Every row rendered on its own and the container rendered around them. The
-/// container costs a second pass over the same rows, which is worth the
-/// alternative not being a template: it is the markup of the list, and the
-/// list's markup belongs in `downloads.html` rather than in a `format!` here.
-fn render(state: &AppState, downloads: &[Download]) -> Option<View> {
-    let rows = crate::routes::rows(state, downloads);
-    let rendered: Result<Vec<_>, _> = rows
-        .iter()
-        .map(|row| {
-            (views::RowMarkup { row }).render().map(|html| RenderedRow {
-                gid: row.gid.clone(),
-                hash: hash(&html),
-                html: html.into(),
-            })
-        })
-        .collect();
-    let full = views::Downloads {
-        rows,
-        aria2_unreachable: false,
-    }
-    .render();
-    match (rendered, full) {
-        (Ok(rows), Ok(full)) => Some(View {
-            rows,
-            full: full.into(),
-            unreachable: false,
-        }),
-        (Err(e), _) | (_, Err(e)) => {
-            tracing::error!(error = %e, "poll: template render failed, retrying next tick");
-            None
-        }
-    }
-}
-
-/// The list replaced by the warning, so an outage that starts while a page is
-/// open says so instead of leaving the last list standing.
-fn render_unreachable() -> Option<View> {
-    let full = views::Downloads {
-        rows: Vec::new(),
-        aria2_unreachable: true,
-    }
-    .render()
-    .inspect_err(|e| tracing::error!(error = %e, "poll: template render failed"))
-    .ok()?;
-    Some(View {
-        rows: Vec::new(),
-        full: full.into(),
-        unreachable: true,
-    })
-}
-
 #[cfg(test)]
 impl Poll {
     pub(crate) fn publish(&self, snapshot: Snapshot) {
         let _ = self.tx.send(Arc::new(snapshot));
     }
-}
-
-fn hash(html: &str) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    html.hash(&mut hasher);
-    hasher.finish()
 }
 
 #[cfg(test)]
@@ -283,74 +191,5 @@ mod tests {
         poll.close();
         assert!(open.next().await.is_none());
         assert!(poll.viewer().next().await.is_none());
-    }
-
-    fn state() -> AppState {
-        AppState {
-            config: Arc::new(crate::config::Config::fixture()),
-            aria2: crate::aria2::Aria2::new(String::new(), reqwest::Client::new()),
-            sessions: crate::auth::session::Sessions::new(),
-            activity: crate::activity::Activity::new(),
-            clearing: crate::state::Clearing::default(),
-            adding: Default::default(),
-            preexisting: Default::default(),
-            poll: Poll::new(),
-            http: reqwest::Client::new(),
-        }
-    }
-
-    /// What makes sending a row instead of the list a saving rather than a
-    /// second rendering of the same screen: the row a stream pushes is
-    /// byte-for-byte the row the container holds, from the one template. Two
-    /// files drifting apart would show as a row that flickers between two
-    /// renderings of itself every time the membership changes.
-    #[test]
-    fn a_pushed_row_is_the_row_the_container_holds() {
-        let downloads = vec![
-            Download {
-                gid: "first".to_string(),
-                ..Download::fixture()
-            },
-            Download {
-                gid: "second".to_string(),
-                total_length: 1000,
-                completed_length: 250,
-                download_speed: 100,
-                ..Download::fixture()
-            },
-        ];
-        let view = render(&state(), &downloads).expect("both rows render");
-
-        assert_eq!(
-            view.rows.iter().map(|r| &r.gid).collect::<Vec<_>>(),
-            ["first", "second"]
-        );
-        for row in &view.rows {
-            assert!(
-                view.full.contains(row.html.as_ref()),
-                "row {} is rendered differently on its own than in the list",
-                row.gid
-            );
-        }
-    }
-
-    /// The diff is only worth anything if identical state hashes identically
-    /// and a moved byte counter does not.
-    #[test]
-    fn a_rows_hash_follows_what_it_says_and_nothing_else() {
-        let state = state();
-        let quiet = vec![Download::fixture()];
-        let moved = vec![Download {
-            completed_length: 512,
-            total_length: 1024,
-            ..Download::fixture()
-        }];
-
-        let a = render(&state, &quiet).unwrap();
-        let b = render(&state, &quiet).unwrap();
-        let c = render(&state, &moved).unwrap();
-
-        assert_eq!(a.rows[0].hash, b.rows[0].hash);
-        assert_ne!(a.rows[0].hash, c.rows[0].hash);
     }
 }

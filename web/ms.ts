@@ -2,11 +2,7 @@ declare global {
   var ms: {
     magnetRowClick(evt: MouseEvent): void;
     pasteMany(evt: ClipboardEvent): void;
-    addMagnetRow(rows: HTMLElement): void;
-    resetMagnets(rows: HTMLElement): void;
-    dropMagnets(rows: HTMLElement, done: string[]): void;
-    clickOnEnter(evt: KeyboardEvent, button: HTMLButtonElement): void;
-    browseUrl(evt: Event): string | null;
+    addMagnetRow(rows: HTMLElement | null): void;
   };
 }
 
@@ -16,27 +12,42 @@ function severalMagnets(text: string) {
   return magnets.length > 1 ? magnets : null;
 }
 
+/** The row an event happened in, if it happened in one. */
+function rowOf(target: EventTarget | null) {
+  return target instanceof Element ? target.closest("[data-magnet-row]") : null;
+}
+
+/** A row's field. */
+function inputOf(row: Element) {
+  const input = row.querySelector("input");
+  return input instanceof HTMLInputElement ? input : null;
+}
+
 /** A blank row after `row`, cloned from it so every row is the same markup. */
 function rowAfter(row: Element) {
-  const next = row.cloneNode(true) as HTMLElement;
-  next.querySelector("input")!.value = "";
+  const next = row.cloneNode(true);
+  if (!(next instanceof Element)) return row;
+  const input = inputOf(next);
+  if (input) input.value = "";
   row.after(next);
   return next;
 }
 
 /**
  * Fill `row` with whatever was pasted, and the rows after it too when the
- * text holds several magnets — a list copied from somewhere else goes in as
+ * text holds several magnets: a list copied from somewhere else goes in as
  * one row each rather than run together in one field, which an `<input>`
  * would do by dropping the line breaks.
  */
 function fillFrom(row: Element, text: string) {
-  const [first, ...rest] = severalMagnets(text) ?? [text.trim()];
-  row.querySelector("input")!.value = first;
+  const [first = "", ...rest] = severalMagnets(text) ?? [text.trim()];
+  const input = inputOf(row);
+  if (input) input.value = first;
   let last = row;
   for (const magnet of rest) {
     last = rowAfter(last);
-    last.querySelector("input")!.value = magnet;
+    const next = inputOf(last);
+    if (next) next.value = magnet;
   }
 }
 
@@ -44,21 +55,14 @@ function fillFrom(row: Element, text: string) {
  * Put the clipboard into a row, from that row's own Paste button.
  *
  * `readText()` is gated on transient user activation everywhere and, on iOS,
- * on a Paste bubble Safari draws itself and no page can suppress. That gate
- * is why this hangs off a button beside the field rather than the tap that
- * opens the sheet: Safari anchors its bubble to the touch that asked, so
- * asking from the header put a Paste button at the top of the screen for a
- * field at the bottom of it, and asked on every open whether or not there
- * was anything anyone wanted pasted (#353).
+ * on a Paste bubble Safari draws itself and no page can suppress. Safari
+ * anchors its bubble to the touch that asked, so asking from a button beside
+ * the field puts the bubble against the field it fills (#353).
  *
- * Whatever is on the clipboard goes in, magnet or not. Filtering to magnets
- * made sense while the read was automatic, since nothing unasked-for should
- * land in a field — but a button that answers an explicit tap by doing
- * nothing reads as broken, where a wrong value is visible and `/add` says
- * what is wrong with it.
- *
- * A refused prompt and a browser with no clipboard API are both no-ops
- * rather than errors: either way there is a field to type into.
+ * Whatever is on the clipboard goes in, magnet or not: a button that answers a
+ * tap by doing nothing reads as broken, where a wrong value is visible and
+ * `/add` says what is wrong with it. A refused prompt and a browser with no
+ * clipboard API are both no-ops: either way there is a field to type into.
  */
 function pasteInto(row: Element) {
   navigator.clipboard?.readText().then(
@@ -68,15 +72,13 @@ function pasteInto(row: Element) {
 }
 
 /**
- * The behaviours that do not belong in an attribute.
+ * The behaviours that do not belong in an attribute: the magnet rows, which
+ * the page's script adds and fills without asking the server.
  *
  * Datastar evaluates `data-on:*` as a function body, so an attribute holds
- * anything JavaScript can express — which is how a click handler becomes a
- * program written in HTML, invisible to oxlint and oxfmt and unreadable at the
- * width a template gives it. Signal work and one `@action` stay inline, where
- * they read as markup; everything with control flow in it lives here.
- *
- * A global rather than an export, because a Datastar expression sees only
+ * anything JavaScript can express, invisible to oxlint, oxfmt and `tsc`.
+ * Anything with control flow in it lives here, and the attribute is a constant
+ * call. A global rather than an export, because a Datastar expression sees only
  * globals, `el`, `evt` and the signals.
  */
 globalThis.ms = {
@@ -85,9 +87,9 @@ globalThis.ms = {
    * the list of rows, so a row cloned in later needs nothing wired up.
    */
   magnetRowClick(evt) {
-    const button = (evt.target as HTMLElement).closest<HTMLElement>("[data-action]");
-    const row = button?.closest("[data-magnet-row]");
-    if (!button || !row) return;
+    const button = evt.target instanceof Element ? evt.target.closest("[data-action]") : null;
+    const row = rowOf(button);
+    if (!(button instanceof HTMLElement) || !row) return;
     if (button.dataset.action === "remove") row.remove();
     else pasteInto(row);
   },
@@ -97,7 +99,7 @@ globalThis.ms = {
    * same as the Paste button does. Anything else is left to the browser.
    */
   pasteMany(evt) {
-    const row = (evt.target as HTMLElement).closest("[data-magnet-row]");
+    const row = rowOf(evt.target);
     const text = evt.clipboardData?.getData("text") ?? "";
     if (!row || !severalMagnets(text)) return;
     evt.preventDefault();
@@ -105,55 +107,8 @@ globalThis.ms = {
   },
 
   addMagnetRow(rows) {
-    rowAfter(rows.lastElementChild!);
-  },
-
-  /** Back to one empty row: closing the sheet abandons the attempt. */
-  resetMagnets(rows) {
-    while (rows.children.length > 1) rows.lastElementChild!.remove();
-    rows.querySelector("input")!.value = "";
-  },
-
-  /**
-   * Drop the rows the server added, so what is left is what it did not and a
-   * second press sends only those. The last row is emptied rather than
-   * removed, since it is what the next row is cloned from.
-   */
-  dropMagnets(rows, done) {
-    for (const input of rows.querySelectorAll("input")) {
-      if (!done.includes(input.value.trim())) continue;
-      if (rows.children.length > 1) input.closest("[data-magnet-row]")!.remove();
-      else input.value = "";
-    }
-  },
-
-  /**
-   * Wire Enter to a button that sits outside the field's own form.
-   *
-   * Both submit buttons here are pinned outside the form they submit, so there
-   * is no implicit submission to inherit and the keyboard's Go key did nothing
-   * at all — on a phone, at the moment the paste just happened. Clicking the
-   * real button keeps one definition of what it does.
-   */
-  clickOnEnter(evt, button) {
-    if (evt.key !== "Enter" || !(evt.target instanceof HTMLInputElement)) return;
-    evt.preventDefault();
-    button.click();
-  },
-
-  /**
-   * The listing to fetch for a click inside the picker, or null if it hit no
-   * folder — the empty space around the buttons, or the path line above them.
-   *
-   * One delegated handler serves the whole listing: a root with a hundred-plus
-   * children is one level of browsing, and a `@get` per row was that many
-   * expressions to compile on every morph and that many URLs inlined into the
-   * response. A path arriving as a plain attribute value is also never parsed
-   * as an expression, so a folder named with a quote cannot break out of it.
-   */
-  browseUrl(evt) {
-    const dir = (evt.target as HTMLElement).closest<HTMLElement>("[data-dir]")?.dataset.dir;
-    return dir === undefined ? null : `/browse?path=${encodeURIComponent(dir)}`;
+    const last = rows?.lastElementChild;
+    if (last) inputOf(rowAfter(last))?.focus();
   },
 };
 
@@ -164,23 +119,15 @@ globalThis.ms = {
  * iOS Safari shrinks the visual viewport for its keyboard and leaves the
  * layout viewport alone. Fixed positioning resolves against the layout one, so
  * the bottom sheet opened underneath the keyboard and Safari scrolled the page
- * chasing the focused field — the invisible dialog and the stray vertical
- * scroll of #353, one cause. Nothing in CSS exposes the gap between the two
- * viewports; this is the only place it can be measured.
- *
- * `offsetTop` is part of it: the visual viewport also pans, and what is
- * covered is whatever sits below its bottom edge in layout coordinates.
- *
- * A browser that resizes its layout viewport for its own keyboard measures
- * zero here, which is the fallback in the stylesheet too, so it is left alone.
- * The guard is for the same reason `visualViewport` is read defensively
- * anywhere: it is absent in older WebViews, and a missing keyboard offset is a
- * sheet that behaves exactly as it did before this existed.
+ * chasing the focused field (#353). Nothing in CSS exposes the gap between the
+ * two viewports; this is the only place it can be measured. A browser that
+ * resizes its layout viewport for its keyboard measures zero, which is also
+ * the stylesheet's fallback.
  */
 const viewport = globalThis.visualViewport;
 if (viewport) {
-  // visualViewport scrolls fire on every pan, and the vast majority report the
-  // same number — skipping those keeps a scroll from invalidating style.
+  // visualViewport scrolls fire on every pan, and most report the same number;
+  // skipping those keeps a scroll from invalidating style.
   let published = -1;
   const publish = () => {
     const covered = Math.round(

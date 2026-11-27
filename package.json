@@ -3,9 +3,7 @@
   "private": true,
   "type": "module",
   "devDependencies": {
-    "@radiosilence/koan-kit-web": "0.3.0",
     "@tailwindcss/cli": "4.3.3",
-    "lucide-static": "1.66.0",
     "oxfmt": "0.75.0",
     "oxlint": "1.90.0",
     "rolldown": "1.2.16",

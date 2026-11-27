@@ -109,7 +109,7 @@ const MAX_PREEXISTING: usize = 200;
 /// it downloaded. Re-adding a season pack into the folder that holds some of
 /// its episodes is the ordinary case, and nothing aria2 reports afterwards
 /// tells those episodes apart from the ones it fetched. The difference is only
-/// visible before the download starts, which is when `finish_add_inner` looks.
+/// visible before the download starts, which is when `add::finish` looks.
 /// Cancelling and the garbage sweep leave these files alone.
 ///
 /// Lost on restart, like the activity log: a download added before it has no
@@ -173,4 +173,26 @@ pub struct AppState {
     /// Hydra and Telegram. One client, so the connection pool and the TLS
     /// session cache are shared.
     pub http: reqwest::Client,
+}
+
+#[cfg(test)]
+impl AppState {
+    /// The service against an aria2 at `aria2_rpc_url`, with the test
+    /// configuration and nothing in flight.
+    pub(crate) fn fixture(aria2_rpc_url: String) -> Self {
+        AppState {
+            config: Arc::new(Config {
+                aria2_rpc_url: aria2_rpc_url.clone(),
+                ..Config::fixture()
+            }),
+            aria2: Aria2::new(aria2_rpc_url, reqwest::Client::new()),
+            sessions: Sessions::new(),
+            activity: Activity::new(),
+            poll: Poll::new(),
+            clearing: Clearing::default(),
+            adding: Adding::default(),
+            preexisting: Preexisting::default(),
+            http: reqwest::Client::new(),
+        }
+    }
 }
