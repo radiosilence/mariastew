@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.3
+
+### Fixed
+
+- **A magnet without a size no longer reads "0 B".** koan-kit-web 0.11.1 draws a transfer with an unknown total as a waiting bar and its rate, with no bytes, so a resolving magnet shows that it is fetching without its metadata passing for progress. The transfers' script is now installed once per page rather than carried by every row, so each streamed row is smaller.
+
 ## 0.10.2
 
 ### Changed
