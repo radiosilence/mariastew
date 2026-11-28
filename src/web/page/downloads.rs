@@ -5,6 +5,12 @@
 //! aria2's shapes do not reach a template. Everything a download shows is
 //! worked out once in [`Download::new`] (the numbers formatted, the health
 //! resolved to a tone and a word), so the markup makes no decisions.
+//!
+//! The bar, the bytes, the rate and the time left are one `kit::Transfer`,
+//! which the page moves between the stream's readings, so the row advances
+//! smoothly rather than in steps as each reading lands.
+
+use std::time::Duration;
 
 use askama::Template;
 use askama_datastar::Html;
@@ -15,7 +21,6 @@ use koan_kit_web as kit;
 use crate::activity::Entry;
 use crate::aria2::{self, Health, Status};
 use crate::auth::extract::CurrentSession;
-use crate::format;
 use crate::library::Removed;
 use crate::state::AppState;
 use crate::web::stream::downloads::{Seen, fingerprint};
@@ -99,6 +104,7 @@ pub(in crate::web) fn drawn(state: &AppState, downloads: &[aria2::Download]) -> 
                 d,
                 state.activity.entries(&d.gid),
                 state.clearing.contains(&d.gid),
+                state.config.poll_interval,
             )
             .draw();
             Drawn {
@@ -122,19 +128,31 @@ const MAX_FILES_SHOWN: usize = 24;
 pub(in crate::web) struct Download {
     gid: String,
     name: String,
-    /// None until the size is known, which the meter draws as waiting.
-    percent: Option<f64>,
+    /// The bar's numbers (`aria2::Download::progress_totals`): a total of
+    /// nought is one not yet known, which the meter draws as waiting.
+    bytes: u64,
+    total: u64,
+    /// The rate the bar's bytes move at (`progress_rate`). Nought whenever
+    /// they are not being downloaded: a hash check, a finished or paused row,
+    /// a magnet with no size to count towards. The page moves the bytes only
+    /// at a rate above nought.
+    rate: u64,
+    /// When the reading last changed (`aria2::stamp`).
+    measured_at_ms: i64,
+    /// How far apart readings arrive: the poll's sleep and the round trip
+    /// that brought this one. The page moves a reading for two of these, so a
+    /// row runs on until the next is due and stops if it does not come.
+    every: Duration,
     /// The meter's and the status's tone: the fast way to read a row at arm's
     /// length. The word beside it says the same for anyone who cannot see it.
     tone: kit::Tone,
     state: &'static str,
-    /// Absent when idle: 0 B/s reads as a measured standstill.
+    /// Absent when idle: 0 B/s reads as a measured standstill. `down` is
+    /// aria2's own rate, which a resolving magnet has with no total for the
+    /// transfer to move towards, and which tells a working one from a stuck
+    /// one.
     down: Option<String>,
     up: Option<String>,
-    size: String,
-    done: String,
-    /// Never set without `down`.
-    eta: Option<String>,
     uploaded: String,
     ratio: Option<String>,
     connections: u32,
@@ -198,8 +216,12 @@ fn basename(path: &str) -> &str {
 }
 
 impl Download {
-    pub(in crate::web) fn new(d: &aria2::Download, log: Vec<Entry>, clearing: bool) -> Self {
-        let percent = d.percent();
+    pub(in crate::web) fn new(
+        d: &aria2::Download,
+        log: Vec<Entry>,
+        clearing: bool,
+        poll: Duration,
+    ) -> Self {
         let health = d.health();
         // Not a health: nothing has been asked of the swarm, so this is a fact
         // about a request in flight. It still outranks the reading:
@@ -211,7 +233,8 @@ impl Download {
         };
         // The bar's own numbers, so "230 MB of 754 MB" beside a bar at 30% is
         // the hash check's progress and not two readings of different things.
-        let (size, done) = d.progress_totals();
+        let (total, bytes) = d.progress_totals();
+        let downloading = total > 0 && d.verified_length.is_none() && !d.is_finished();
         let (skipped_count, skipped_bytes) = d
             .files
             .iter()
@@ -221,20 +244,21 @@ impl Download {
         Download {
             gid: d.gid.clone(),
             name: d.display_name().to_string(),
-            percent,
+            bytes,
+            total,
+            rate: if downloading { d.progress_rate() } else { 0 },
+            measured_at_ms: d.measured_at_ms,
+            every: poll + d.read_in,
             tone,
             state,
-            down: format::rate(d.download_speed),
-            up: format::rate(d.upload_speed),
-            size: format::bytes(size),
-            done: format::bytes(done),
-            eta: d.eta_secs().map(format::duration),
-            uploaded: format::bytes(d.upload_length),
+            down: (d.download_speed > 0).then(|| format!("{}/s", kit::size(d.download_speed))),
+            up: (d.upload_speed > 0).then(|| format!("{}/s", kit::size(d.upload_speed))),
+            uploaded: kit::size(d.upload_length),
             ratio: d.ratio().map(|r| format!("{r:.2}")),
             connections: d.connections,
             seeders: d.num_seeders,
             pieces: (d.num_pieces > 0)
-                .then(|| format!("{} × {}", d.num_pieces, format::bytes(d.piece_length))),
+                .then(|| format!("{} × {}", d.num_pieces, kit::size(d.piece_length))),
             info_hash: d.info_hash.clone(),
             error: d.error_message.clone().filter(|m| !m.is_empty()),
             error_code: d
@@ -250,7 +274,7 @@ impl Download {
                 .take(MAX_FILES_SHOWN)
                 .map(|f| File {
                     name: basename(&f.path).to_string(),
-                    size: format::bytes(f.length),
+                    size: kit::size(f.length),
                     percent: (f.selected && f.length > 0)
                         .then(|| (f.completed_length as f64 / f.length as f64 * 100.0).round()),
                     selected: f.selected,
@@ -259,7 +283,7 @@ impl Download {
             file_count: d.files.len(),
             selected_count: d.files.len() - skipped_count,
             skipped: (skipped_count > 0)
-                .then(|| format!("{skipped_count} skipped, {}", format::bytes(skipped_bytes))),
+                .then(|| format!("{skipped_count} skipped, {}", kit::size(skipped_bytes))),
             log: log
                 .into_iter()
                 .map(|e| Line {
@@ -304,14 +328,13 @@ impl Download {
             .class("shrink-0")
     }
 
-    fn meter(&self) -> kit::Meter<'static> {
-        match self.percent {
-            Some(p) => kit::Meter::new(p.round(), 100.0),
-            None => kit::Meter::waiting(),
-        }
-        .tone(self.tone)
-        .label("download")
-        .class("mt-2")
+    fn transfer(&self) -> kit::Transfer<'static> {
+        kit::Transfer::new(self.bytes, self.total)
+            .rate(self.rate, self.measured_at_ms)
+            .every(self.every)
+            .tone(self.tone)
+            .label("download")
+            .class("mt-2")
     }
 
     fn file_meter(&self, percent: impl Into<kit::Amount>) -> kit::Meter<'static> {
@@ -321,21 +344,12 @@ impl Download {
             .class("mt-1")
     }
 
-    /// The readings a percentage cannot give: how long, whether it is giving
-    /// anything back, who it is talking to. Until the magnet resolves there is
-    /// no size, and "0 B / 0 B" would read as a finished download of nothing.
+    /// The readings the transfer line does not give: what aria2 is fetching
+    /// before the size is known, whether it is giving anything back, who it
+    /// is talking to, how aria2 has cut it up.
     fn readings(&self) -> kit::Pairs<'_> {
         let dash = |v: &Option<String>| v.clone().unwrap_or_else(|| "—".to_string());
         kit::Pairs::new()
-            .pair(
-                "done",
-                if self.percent.is_some() {
-                    format!("{} / {}", self.done, self.size)
-                } else {
-                    "—".to_string()
-                },
-            )
-            .pair("left", dash(&self.eta))
             .pair("down", dash(&self.down))
             .pair("up", dash(&self.up))
             .pair(
@@ -457,7 +471,10 @@ mod tests {
     }
 
     fn draw_with(d: &aria2::Download, log: Vec<Entry>, clearing: bool) -> String {
-        Download::new(d, log, clearing).draw().as_str().to_string()
+        Download::new(d, log, clearing, Duration::from_millis(100))
+            .draw()
+            .as_str()
+            .to_string()
     }
 
     fn file(
@@ -511,26 +528,68 @@ mod tests {
     }
 
     /// The two numbers that answer "will this be done tonight" sit in the
-    /// collapsed row.
+    /// collapsed row, as a transfer the page moves between readings.
     #[test]
     fn the_collapsed_row_shows_the_rate_and_the_time_left() {
         let html = draw(&moving());
         let summary = summary(&html);
-        assert!(summary.contains("1.00 MiB/s"), "no rate: {summary}");
+        assert!(summary.contains("data-kit-transfer"), "{summary}");
+        assert!(summary.contains("512.0 MB</span> of 1.0 GB"), "{summary}");
+        assert!(summary.contains("1.0 MB/s"), "no rate: {summary}");
         assert!(summary.contains("8m 32s left"), "no time left: {summary}");
     }
 
     /// Nothing is moving, so there is no rate to show and nothing to divide
-    /// the remaining bytes by.
+    /// the remaining bytes by, and the transfer stands still.
     #[test]
     fn an_idle_row_shows_neither_and_keeps_the_dash_in_the_readings() {
-        let html = draw(&finished());
-        let summary = summary(&html);
+        let row = Download::new(&finished(), Vec::new(), false, Duration::from_millis(100));
+        assert_eq!(row.rate, 0, "an idle row would move");
+        let html = row.draw().as_str().to_string();
         assert!(
-            !summary.contains("B/s") && !summary.contains("left"),
-            "an idle row still shows a rate or a countdown: {summary}"
+            !summary(&html).contains("B/s"),
+            "an idle row still shows a rate: {html}"
         );
         assert!(html.contains("—"), "the readings lost their dash: {html}");
+    }
+
+    /// A hash check's bytes are hashed, not downloaded, so the bar follows
+    /// them without moving them at the download's rate.
+    #[test]
+    fn a_hash_check_stands_still_between_readings() {
+        let d = aria2::Download {
+            verified_length: Some(268_435_456),
+            ..moving()
+        };
+        let row = Download::new(&d, Vec::new(), false, Duration::from_millis(100));
+        assert_eq!((row.bytes, row.rate), (268_435_456, 0));
+    }
+
+    /// A row moves a reading for as long as the next takes to arrive: the
+    /// poll's sleep and the round trip that brought it.
+    #[test]
+    fn a_reading_moves_until_the_next_is_due() {
+        let d = aria2::Download {
+            read_in: Duration::from_millis(40),
+            ..moving()
+        };
+        let row = Download::new(&d, Vec::new(), false, Duration::from_millis(100));
+        assert_eq!(row.every, Duration::from_millis(140));
+    }
+
+    /// A resolving magnet has no size to move towards, but what aria2 is
+    /// fetching for it still tells a working one from a stuck one.
+    #[test]
+    fn a_resolving_magnet_still_says_what_it_is_fetching() {
+        let d = aria2::Download {
+            total_length: 0,
+            completed_length: 0,
+            download_speed: 12_288,
+            ..moving()
+        };
+        let row = Download::new(&d, Vec::new(), false, Duration::from_millis(100));
+        assert_eq!((row.total, row.rate), (0, 0));
+        assert!(row.draw().as_str().contains("12.0 KB/s"));
     }
 
     #[test]
@@ -551,13 +610,7 @@ mod tests {
             info_hash: Some("d1e2f3a4b5c6".to_string()),
             ..moving()
         });
-        for reading in [
-            "8m 32s",
-            "256 MiB",
-            "0.50",
-            "256 × 4.00 MiB",
-            "d1e2f3a4b5c6",
-        ] {
+        for reading in ["256.0 MB", "0.50", "256 × 4.0 MB", "d1e2f3a4b5c6"] {
             assert!(html.contains(reading), "no {reading}: {html}");
         }
     }

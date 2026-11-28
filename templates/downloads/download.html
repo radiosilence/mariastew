@@ -1,5 +1,5 @@
-{#- One download. Collapsed, it answers "how is it going": name, state, bar, destination, and the rate and time left
-    while anything moves. Open, it answers "what is aria2 doing". It keeps its `open` across a morph, so an open panel
+{#- One download. Collapsed, it answers "how is it going": name, state, the transfer (bar, bytes, and the rate and time
+    left while anything moves), and the destination. Open, it answers "what is aria2 doing". It keeps its `open` across a morph, so an open panel
     goes on updating in place. #}
 {% filter kit::wrap(kit::Disclosure::new("").id(self.id()).class("border-b border-rule")) %}
 <summary class="flex min-h-14 items-center gap-3 py-3">
@@ -8,13 +8,8 @@
       <span class="truncate text-control text-strong">{{ name }}</span>
       {{ self.status() }}
     </div>
-    {{ self.meter() }}
-    <div class="mt-1.5 flex items-baseline justify-between gap-2 text-fine">
-      <p class="my-0 min-w-0 break-words text-muted">{{ kit::icon::FOLDER.svg(12) }} {{ dir }}</p>
-      {%- if let Some(down) = down %}
-      <span class="shrink-0 tabular-nums">{{ kit::icon::ARROW_DOWN.svg(12).label("download rate") }} {{ down }}{% if let Some(eta) = eta %} · {{ eta }} left{% endif %}</span>
-      {%- endif %}
-    </div>
+    {{ self.transfer() }}
+    <p class="mt-1.5 mb-0 min-w-0 break-words text-fine text-muted">{{ kit::icon::FOLDER.svg(12) }} {{ dir }}</p>
   </div>
 </summary>
 <div class="flex flex-col gap-3 pb-4">
