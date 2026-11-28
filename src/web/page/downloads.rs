@@ -132,10 +132,10 @@ pub(in crate::web) struct Download {
     /// nought is one not yet known, which the meter draws as waiting.
     bytes: u64,
     total: u64,
-    /// The rate the bar's bytes move at (`progress_rate`). Nought whenever
-    /// they are not being downloaded: a hash check, a finished or paused row,
-    /// a magnet with no size to count towards. The page moves the bytes only
-    /// at a rate above nought.
+    /// The rate the bar's bytes move at (`progress_rate`), or aria2's own
+    /// while a magnet has no size. Nought whenever nothing is being
+    /// downloaded: a hash check, a finished or paused row. The page moves the
+    /// bytes only at a rate above nought.
     rate: u64,
     /// When the reading last changed (`aria2::stamp`).
     measured_at_ms: i64,
@@ -148,9 +148,8 @@ pub(in crate::web) struct Download {
     tone: kit::Tone,
     state: &'static str,
     /// Absent when idle: 0 B/s reads as a measured standstill. `down` is
-    /// aria2's own rate, which a resolving magnet has with no total for the
-    /// transfer to move towards, and which tells a working one from a stuck
-    /// one.
+    /// aria2's own rate, the whole torrent's where the transfer's is scaled
+    /// to the chosen files.
     down: Option<String>,
     up: Option<String>,
     uploaded: String,
@@ -234,7 +233,7 @@ impl Download {
         // The bar's own numbers, so "230 MB of 754 MB" beside a bar at 30% is
         // the hash check's progress and not two readings of different things.
         let (total, bytes) = d.progress_totals();
-        let downloading = total > 0 && d.verified_length.is_none() && !d.is_finished();
+        let fetching = d.verified_length.is_none() && !d.is_finished();
         let (skipped_count, skipped_bytes) = d
             .files
             .iter()
@@ -246,13 +245,19 @@ impl Download {
             name: d.display_name().to_string(),
             bytes,
             total,
-            rate: if downloading { d.progress_rate() } else { 0 },
+            // A magnet without a size has no bytes to move, so its transfer
+            // is a waiting meter and aria2's rate while there is one.
+            rate: match (fetching, total) {
+                (false, _) => 0,
+                (true, 0) => d.download_speed,
+                (true, _) => d.progress_rate(),
+            },
             measured_at_ms: d.measured_at_ms,
             every: poll + d.read_in,
             tone,
             state,
-            down: (d.download_speed > 0).then(|| format!("{}/s", kit::size(d.download_speed))),
-            up: (d.upload_speed > 0).then(|| format!("{}/s", kit::size(d.upload_speed))),
+            down: (d.download_speed > 0).then(|| kit::rate(d.download_speed)),
+            up: (d.upload_speed > 0).then(|| kit::rate(d.upload_speed)),
             uploaded: kit::size(d.upload_length),
             ratio: d.ratio().map(|r| format!("{r:.2}")),
             connections: d.connections,
@@ -344,9 +349,9 @@ impl Download {
             .class("mt-1")
     }
 
-    /// The readings the transfer line does not give: what aria2 is fetching
-    /// before the size is known, whether it is giving anything back, who it
-    /// is talking to, how aria2 has cut it up.
+    /// The readings the transfer line does not give: the whole torrent's
+    /// rate, whether it is giving anything back, who it is talking to, how
+    /// aria2 has cut it up.
     fn readings(&self) -> kit::Pairs<'_> {
         let dash = |v: &Option<String>| v.clone().unwrap_or_else(|| "—".to_string());
         kit::Pairs::new()
@@ -534,7 +539,10 @@ mod tests {
         let html = draw(&moving());
         let summary = summary(&html);
         assert!(summary.contains("data-kit-transfer"), "{summary}");
-        assert!(summary.contains("512.0 MB</span> of 1.0 GB"), "{summary}");
+        assert!(
+            summary.contains("512.0 MB") && summary.contains("of 1.0 GB"),
+            "{summary}"
+        );
         assert!(summary.contains("1.0 MB/s"), "no rate: {summary}");
         assert!(summary.contains("8m 32s left"), "no time left: {summary}");
     }
@@ -577,19 +585,25 @@ mod tests {
         assert_eq!(row.every, Duration::from_millis(140));
     }
 
-    /// A resolving magnet has no size to move towards, but what aria2 is
-    /// fetching for it still tells a working one from a stuck one.
+    /// A resolving magnet has no size to move towards, but its rate still
+    /// tells a working one from a stuck one, and no bytes are drawn as
+    /// progress.
     #[test]
-    fn a_resolving_magnet_still_says_what_it_is_fetching() {
+    fn a_resolving_magnet_waits_and_says_what_it_is_fetching() {
         let d = aria2::Download {
             total_length: 0,
-            completed_length: 0,
+            completed_length: 34_000,
             download_speed: 12_288,
             ..moving()
         };
         let row = Download::new(&d, Vec::new(), false, Duration::from_millis(100));
-        assert_eq!((row.total, row.rate), (0, 0));
-        assert!(row.draw().as_str().contains("12.0 KB/s"));
+        assert_eq!((row.total, row.rate), (0, 12_288));
+        let html = row.draw().as_str().to_string();
+        assert!(summary(&html).contains("12.0 KB/s"), "{html}");
+        assert!(
+            !summary(&html).contains("33.2 KB"),
+            "bytes drawn as progress: {html}"
+        );
     }
 
     #[test]
