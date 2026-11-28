@@ -46,9 +46,9 @@ clearing those is quicker than finding a link a filter dropped. The field is
 plain text with the URL keyboard rather than `type="url"`, so the browser's
 own validation never answers before `/add`'s row-numbered one.
 
-While the sheet reads its body the form it sends is not there yet, so its
-footer buttons are hidden, to the pointer and to Tab alike, until the body
-arrives (`styles/app.css`).
+While the sheet reads its body the form it sends is not there yet, so the kit
+hides its footer actions until the body arrives, and a failed read closes the
+sheet with a failure flash.
 
 `/add` takes the batch whole for validation and one magnet at a time for
 aria2: a bad row refuses everything, since nothing has been added yet and that
