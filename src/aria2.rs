@@ -363,18 +363,6 @@ impl Download {
         }
     }
 
-    /// `None` until the magnet resolves, which a `<progress>` with no value
-    /// renders as indeterminate. That is the honest rendering: with
-    /// `total_length` at zero a percentage is a division by zero, and
-    /// "resolving the magnet" is a different state from "downloading nothing".
-    pub fn percent(&self) -> Option<f64> {
-        let (total, done) = self.progress_totals();
-        if total == 0 {
-            return None;
-        }
-        Some(done as f64 / total as f64 * 100.0)
-    }
-
     pub fn is_metadata(&self) -> bool {
         self.name().starts_with(METADATA_PREFIX)
     }
@@ -978,18 +966,18 @@ mod tests {
     }
 
     #[test]
-    fn percent_is_none_at_zero_total() {
+    fn the_total_is_unknown_at_zero() {
         let mut d = download(Status::Active);
         d.total_length = 0;
-        assert_eq!(d.percent(), None);
+        assert_eq!(d.progress_totals(), (0, 0));
     }
 
     #[test]
-    fn percent_is_the_completed_fraction() {
+    fn progress_is_the_completed_bytes_of_the_total() {
         let mut d = download(Status::Active);
         d.total_length = 200;
         d.completed_length = 50;
-        assert_eq!(d.percent(), Some(25.0));
+        assert_eq!(d.progress_totals(), (200, 50));
     }
 
     #[test]
@@ -1083,7 +1071,6 @@ mod tests {
 
         d.verified_length = Some(30);
         assert_eq!(d.progress_totals(), (100, 30));
-        assert_eq!(d.percent(), Some(30.0));
 
         // aria2 hashes whole pieces, so a selective torrent can verify past
         // the size of the files it chose. A saturated bar beats one at 140%.
@@ -1225,7 +1212,7 @@ mod tests {
     }
 
     #[test]
-    fn percent_is_computed_from_selected_files_only() {
+    fn progress_is_computed_from_selected_files_only() {
         let mut d = download(Status::Active);
         d.total_length = 1100;
         d.completed_length = 500;
@@ -1233,15 +1220,15 @@ mod tests {
             file(1, 1000, 500, true), // 50% of the only file that counts
             file(2, 100, 100, false), // fully arrived, but not selected
         ];
-        assert_eq!(d.percent(), Some(50.0));
+        assert_eq!(d.progress_totals(), (1000, 500));
     }
 
     #[test]
-    fn percent_falls_back_to_the_aggregate_when_nothing_is_selected_yet() {
+    fn progress_falls_back_to_the_aggregate_when_nothing_is_selected_yet() {
         let mut d = download(Status::Active);
         d.total_length = 100;
         d.completed_length = 25;
-        assert_eq!(d.percent(), Some(25.0));
+        assert_eq!(d.progress_totals(), (100, 25));
     }
 
     /// A magnet whose metadata has fully arrived, as aria2 reports it just
@@ -1271,12 +1258,12 @@ mod tests {
     }
 
     /// Its 34 KB are the torrent file's, so there is nothing yet to measure
-    /// and nothing is what these say — which is what the row already renders
-    /// as an indeterminate bar and a size of "—".
+    /// and nothing is what these say — which the row renders as a waiting
+    /// bar with nothing counting down.
     #[test]
     fn a_metadata_passes_own_bytes_are_not_the_torrents_progress() {
         let d = resolved_metadata_pass();
-        assert_eq!(d.percent(), None);
+        assert_eq!(d.progress_totals(), (0, 0));
         assert_eq!(d.ratio(), None);
     }
 

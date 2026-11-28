@@ -537,7 +537,7 @@ mod tests {
         let html = draw(&finished());
         let summary = summary(&html);
         assert!(
-            !summary.contains("B/s") && !summary.contains(" left"),
+            !summary.contains("B/s") && !summary.contains("data-kit-left"),
             "an idle row still shows a rate or a countdown: {summary}"
         );
         assert!(
