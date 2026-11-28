@@ -914,9 +914,9 @@ dependencies = [
 
 [[package]]
 name = "koan-kit-web"
-version = "0.11.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "798ce6331b23416a3340940acdc3e0a02998381eb50b8aabfb035b17fc4c425e"
+checksum = "104735bd7a858da823647a0ebe95f5ec01c12394816799f92871920e411ea32c"
 dependencies = [
  "askama",
  "askama_datastar",
