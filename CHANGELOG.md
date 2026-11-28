@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.1
+
+### Changed
+
+- **koan-kit-web 0.10.0.** The add sheet, opened while the server cannot be reached, now gives up after a second attempt and closes with the unreachable flash, where it stayed busy for the three minutes Datastar's retries take. Textareas resize vertically only.
+
 ## 0.10.0
 
 ### Changed
