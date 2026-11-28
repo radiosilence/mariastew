@@ -9,7 +9,7 @@
 //! reality instead of reconciling with it.
 
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use std::collections::HashMap;
@@ -67,6 +67,61 @@ const STOPPED_LIMIT: u32 = 100;
 pub struct Aria2 {
     url: Arc<String>,
     http: reqwest::Client,
+    /// Each listed download's last reading, so one that has not changed keeps
+    /// the instant it was first seen (`stamp`).
+    readings: Arc<Mutex<HashMap<String, Reading>>>,
+}
+
+/// What a download's reading is told apart by, and when it last changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Reading {
+    completed_length: u64,
+    verified_length: Option<u64>,
+    download_speed: u64,
+    at_ms: i64,
+    read_in: Duration,
+}
+
+/// Give each download the instant its reading last changed.
+///
+/// A page moves a download's bytes from its rate between readings, and takes
+/// a new instant as a new reading to move from. Stamped with the time of
+/// every read, an unchanged reading would restart from the same bytes each
+/// poll, drawing a sawtooth, a download that stalled with its last rate
+/// still reported would never stop, and a row that had not changed would be
+/// sent again on every pass. The instant, and how long the read that
+/// brought it took, change only when the bytes or the rate do.
+fn stamp(
+    readings: &mut HashMap<String, Reading>,
+    downloads: &mut [Download],
+    now_ms: i64,
+    read_in: Duration,
+) {
+    let mut seen = HashMap::with_capacity(downloads.len());
+    for d in downloads {
+        let reading = match readings.get(&d.gid) {
+            Some(last)
+                if (
+                    last.completed_length,
+                    last.verified_length,
+                    last.download_speed,
+                ) == (d.completed_length, d.verified_length, d.download_speed) =>
+            {
+                *last
+            }
+            _ => Reading {
+                completed_length: d.completed_length,
+                verified_length: d.verified_length,
+                download_speed: d.download_speed,
+                at_ms: now_ms,
+                read_in,
+            },
+        };
+        d.measured_at_ms = reading.at_ms;
+        d.read_in = reading.read_in;
+        seen.insert(d.gid.clone(), reading);
+    }
+    *readings = seen;
 }
 
 /// What a download is doing, as aria2 reports it.
@@ -250,10 +305,14 @@ pub struct Download {
     pub upload_length: u64,
     pub download_speed: u64,
     pub upload_speed: u64,
-    /// When this reading was taken, in milliseconds since the Unix epoch. It
-    /// tells one reading from the next, so a page moving the bytes between
-    /// readings knows when a new one has arrived.
+    /// When this reading last changed, in milliseconds since the Unix epoch
+    /// (`stamp`). It tells one reading from the next, so a page moving the
+    /// bytes between readings knows when a new one has arrived. Nought on a
+    /// download read on its own rather than listed.
     pub measured_at_ms: i64,
+    /// How long the read that brought this reading took, which with the poll
+    /// interval is how far apart readings arrive.
+    pub read_in: Duration,
     pub connections: u32,
     pub num_seeders: u32,
     pub error_message: Option<String>,
@@ -363,6 +422,20 @@ impl Download {
         }
     }
 
+    /// The rate `progress_totals`' bytes move at. aria2's rate is the whole
+    /// torrent's, and a selective one also fetches the pieces its skipped
+    /// files share with chosen ones, so the rate is scaled to the chosen
+    /// share; unscaled, a bar of the chosen bytes runs ahead of each reading.
+    pub fn progress_rate(&self) -> u64 {
+        match self.selected_totals() {
+            Some((selected, _)) if selected < self.total_length => {
+                (u128::from(self.download_speed) * u128::from(selected)
+                    / u128::from(self.total_length)) as u64
+            }
+            _ => self.download_speed,
+        }
+    }
+
     pub fn is_metadata(&self) -> bool {
         self.name().starts_with(METADATA_PREFIX)
     }
@@ -468,6 +541,7 @@ impl Download {
             download_speed: 0,
             upload_speed: 0,
             measured_at_ms: 0,
+            read_in: Duration::ZERO,
             connections: 0,
             num_seeders: 0,
             error_message: None,
@@ -573,9 +647,8 @@ impl RawDownload {
             upload_length: self.upload_length.parse().unwrap_or(0),
             download_speed: self.download_speed.parse().unwrap_or(0),
             upload_speed: self.upload_speed.parse().unwrap_or(0),
-            measured_at_ms: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |since| since.as_millis() as i64),
+            measured_at_ms: 0,
+            read_in: Duration::ZERO,
             connections: self.connections.parse().unwrap_or(0),
             num_seeders: self.num_seeders.and_then(|s| s.parse().ok()).unwrap_or(0),
             error_message: self.error_message,
@@ -681,6 +754,7 @@ impl Aria2 {
         Self {
             url: Arc::new(url),
             http,
+            readings: Arc::default(),
         }
     }
 
@@ -772,9 +846,20 @@ impl Aria2 {
     /// screen; once the real download exists it moves to the stopped list and
     /// is replaced rather than duplicated.
     pub async fn downloads(&self) -> AppResult<Vec<Download>> {
+        let started = std::time::Instant::now();
         let [mut downloads, waiting, stopped] = self.tell_all().await?;
+        let read_in = started.elapsed();
         downloads.extend(waiting);
         downloads.extend(stopped.into_iter().filter(|d| !d.is_metadata()));
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_millis() as i64);
+        stamp(
+            &mut self.readings.lock().unwrap_or_else(|e| e.into_inner()),
+            &mut downloads,
+            now_ms,
+            read_in,
+        );
         Ok(downloads)
     }
 
@@ -1336,6 +1421,43 @@ mod tests {
             downloads.iter().map(|d| d.gid.as_str()).collect::<Vec<_>>(),
             ["older", "newest"]
         );
+    }
+
+    #[test]
+    fn a_reading_keeps_its_instant_until_its_bytes_or_rate_change() {
+        let mut readings = HashMap::new();
+        let mut d = download(Status::Active);
+        d.completed_length = 10;
+        d.download_speed = 5;
+        let read = |readings: &mut HashMap<String, Reading>, d: &Download, now_ms, ms| {
+            let mut list = [d.clone()];
+            stamp(readings, &mut list, now_ms, Duration::from_millis(ms));
+            let [d] = list;
+            (d.measured_at_ms, d.read_in.as_millis())
+        };
+        assert_eq!(read(&mut readings, &d, 1_000, 20), (1_000, 20));
+        assert_eq!(read(&mut readings, &d, 1_100, 30), (1_000, 20));
+        d.completed_length = 11;
+        assert_eq!(read(&mut readings, &d, 1_200, 40), (1_200, 40));
+        d.download_speed = 0;
+        assert_eq!(read(&mut readings, &d, 1_300, 50), (1_300, 50));
+        let other = Download {
+            gid: "other".to_string(),
+            ..download(Status::Active)
+        };
+        read(&mut readings, &other, 1_400, 10);
+        assert_eq!(readings.keys().collect::<Vec<_>>(), ["other"]);
+    }
+
+    #[test]
+    fn a_selective_torrents_rate_is_scaled_to_its_chosen_share() {
+        let mut d = download(Status::Active);
+        d.total_length = 1000;
+        d.download_speed = 100;
+        d.files = vec![file(1, 250, 0, true), file(2, 750, 0, false)];
+        assert_eq!(d.progress_rate(), 25);
+        d.files[1].selected = true;
+        assert_eq!(d.progress_rate(), 100);
     }
 
     /// aria2 marks the metadata-only pass with this literal prefix for as

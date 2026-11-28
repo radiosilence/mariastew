@@ -29,15 +29,24 @@ raises "will this be done tonight" and cannot settle it; behind a tap they were
 one tap too many. The rate and the time left are absent rather than zeroed when
 nothing is moving, which is also why there is no countdown on a seeding row.
 
-Each reading carries aria2's rate and the instant the poller took it, and the
-page moves the bytes and the countdown from that rate between readings, so a
-row advances smoothly however the stream's patches arrive. The rate is sent as
-nought, and the row stands still, whenever the bytes are not being downloaded:
-during a hash check, whose bytes are hashed rather than fetched; on a finished
-or paused row; and before a magnet has a size to count towards. A reading also
-stops moving two poll intervals after it arrived (never less than two seconds),
-so a stream that stalls without saying so freezes the row rather than running
-it on to a total it has not reached.
+Each reading carries a rate and the instant it last changed, and the page moves
+the bytes and the countdown from that rate between readings, so a row advances
+smoothly however the stream's patches arrive. The instant changes only when
+aria2's bytes or rate do (`aria2::stamp`). Stamped at every read, an unchanged
+reading would restart from the same bytes each poll and draw a sawtooth, a
+download that stalled with its last rate still reported would never stop, and
+a row that had not changed would be streamed again on every pass.
+
+A reading moves for two of the gaps between readings, the poll's sleep plus the
+round trip that brought it, so a row runs on until the next is due and freezes
+if it does not come. The rate is nought, and the row stands still, whenever the
+bytes are not being downloaded: during a hash check, whose bytes are hashed
+rather than fetched; on a finished or paused row; and before a magnet has a
+size to count towards, when aria2's own rate is still shown among the expanded
+readings as `down`, the difference between a magnet that is resolving and one
+that is stuck. aria2's rate is the whole torrent's, and a selective torrent
+also fetches the pieces its skipped files share with the chosen ones, so the
+rate the bar moves at is scaled to the chosen share of the torrent.
 
 Expanding it answers "what is aria2 actually doing", which needs rather more
 than a percentage:

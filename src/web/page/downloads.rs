@@ -132,19 +132,26 @@ pub(in crate::web) struct Download {
     /// nought is one not yet known, which the meter draws as waiting.
     bytes: u64,
     total: u64,
-    /// Nought whenever the bytes are not being downloaded: a hash check, a
-    /// finished or paused row, a magnet with no size to count towards. The
-    /// page moves the bytes only at a rate above nought.
+    /// The rate the bar's bytes move at (`progress_rate`). Nought whenever
+    /// they are not being downloaded: a hash check, a finished or paused row,
+    /// a magnet with no size to count towards. The page moves the bytes only
+    /// at a rate above nought.
     rate: u64,
+    /// When the reading last changed (`aria2::stamp`).
     measured_at_ms: i64,
-    /// How often the stream reads aria2, which is how long past a reading the
-    /// page goes on moving it.
+    /// How far apart readings arrive: the poll's sleep and the round trip
+    /// that brought this one. The page moves a reading for two of these, so a
+    /// row runs on until the next is due and stops if it does not come.
     every: Duration,
     /// The meter's and the status's tone: the fast way to read a row at arm's
     /// length. The word beside it says the same for anyone who cannot see it.
     tone: kit::Tone,
     state: &'static str,
-    /// Absent when idle: 0 B/s reads as a measured standstill.
+    /// Absent when idle: 0 B/s reads as a measured standstill. `down` is
+    /// aria2's own rate, which a resolving magnet has with no total for the
+    /// transfer to move towards, and which tells a working one from a stuck
+    /// one.
+    down: Option<String>,
     up: Option<String>,
     uploaded: String,
     ratio: Option<String>,
@@ -239,13 +246,12 @@ impl Download {
             name: d.display_name().to_string(),
             bytes,
             total,
-            rate: if downloading { d.download_speed } else { 0 },
+            rate: if downloading { d.progress_rate() } else { 0 },
             measured_at_ms: d.measured_at_ms,
-            // The kit's own default is a reading a second; a faster poll
-            // keeps it, so a reading that arrives late does not stop the row.
-            every: poll.max(Duration::from_secs(1)),
+            every: poll + d.read_in,
             tone,
             state,
+            down: (d.download_speed > 0).then(|| format!("{}/s", kit::size(d.download_speed))),
             up: (d.upload_speed > 0).then(|| format!("{}/s", kit::size(d.upload_speed))),
             uploaded: kit::size(d.upload_length),
             ratio: d.ratio().map(|r| format!("{r:.2}")),
@@ -338,11 +344,14 @@ impl Download {
             .class("mt-1")
     }
 
-    /// The readings the transfer line does not give: whether it is giving
-    /// anything back, who it is talking to, how aria2 has cut it up.
+    /// The readings the transfer line does not give: what aria2 is fetching
+    /// before the size is known, whether it is giving anything back, who it
+    /// is talking to, how aria2 has cut it up.
     fn readings(&self) -> kit::Pairs<'_> {
+        let dash = |v: &Option<String>| v.clone().unwrap_or_else(|| "—".to_string());
         kit::Pairs::new()
-            .pair("up", self.up.clone().unwrap_or_else(|| "—".to_string()))
+            .pair("down", dash(&self.down))
+            .pair("up", dash(&self.up))
             .pair(
                 "peers",
                 format!("{} of {} seeding", self.connections, self.seeders),
@@ -534,15 +543,12 @@ mod tests {
     /// the remaining bytes by, and the transfer stands still.
     #[test]
     fn an_idle_row_shows_neither_and_keeps_the_dash_in_the_readings() {
-        let html = draw(&finished());
-        let summary = summary(&html);
+        let row = Download::new(&finished(), Vec::new(), false, Duration::from_millis(100));
+        assert_eq!(row.rate, 0, "an idle row would move");
+        let html = row.draw().as_str().to_string();
         assert!(
-            !summary.contains("B/s") && !summary.contains("<span data-kit-left>"),
-            "an idle row still shows a rate or a countdown: {summary}"
-        );
-        assert!(
-            summary.contains(r#"data-rate="0" data-at="0""#),
-            "{summary}"
+            !summary(&html).contains("B/s"),
+            "an idle row still shows a rate: {html}"
         );
         assert!(html.contains("—"), "the readings lost their dash: {html}");
     }
@@ -551,24 +557,39 @@ mod tests {
     /// them without moving them at the download's rate.
     #[test]
     fn a_hash_check_stands_still_between_readings() {
-        let html = draw(&aria2::Download {
+        let d = aria2::Download {
             verified_length: Some(268_435_456),
             ..moving()
-        });
-        assert!(html.contains(r#"data-bytes="268435456""#), "{html}");
-        assert!(html.contains(r#"data-rate="0""#), "{html}");
+        };
+        let row = Download::new(&d, Vec::new(), false, Duration::from_millis(100));
+        assert_eq!((row.bytes, row.rate), (268_435_456, 0));
     }
 
-    /// A slower poll than the kit's default reading a second moves each
-    /// reading for longer, so a row does not stop between them.
+    /// A row moves a reading for as long as the next takes to arrive: the
+    /// poll's sleep and the round trip that brought it.
     #[test]
-    fn a_slow_poll_moves_each_reading_for_longer() {
-        let html = Download::new(&moving(), Vec::new(), false, Duration::from_secs(3))
-            .draw()
-            .as_str()
-            .to_string();
-        assert!(html.contains(r#"data-every="3000""#), "{html}");
-        assert!(!draw(&moving()).contains("data-every"));
+    fn a_reading_moves_until_the_next_is_due() {
+        let d = aria2::Download {
+            read_in: Duration::from_millis(40),
+            ..moving()
+        };
+        let row = Download::new(&d, Vec::new(), false, Duration::from_millis(100));
+        assert_eq!(row.every, Duration::from_millis(140));
+    }
+
+    /// A resolving magnet has no size to move towards, but what aria2 is
+    /// fetching for it still tells a working one from a stuck one.
+    #[test]
+    fn a_resolving_magnet_still_says_what_it_is_fetching() {
+        let d = aria2::Download {
+            total_length: 0,
+            completed_length: 0,
+            download_speed: 12_288,
+            ..moving()
+        };
+        let row = Download::new(&d, Vec::new(), false, Duration::from_millis(100));
+        assert_eq!((row.total, row.rate), (0, 0));
+        assert!(row.draw().as_str().contains("12.0 KB/s"));
     }
 
     #[test]
