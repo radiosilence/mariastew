@@ -1,22 +1,12 @@
-{#- A sheet: pinned to the bottom edge on a phone, where a thumb already is. It closes itself when the server says the
-    batch went in (`$_added`), and closing, by cancel, a tap outside or Escape alike, empties the form and asks for the sheet fresh, since closing is
-    the moment an attempt is abandoned. The form is reset as well because a morph leaves a typed value alone when the
-    markup's own value did not change. The add button sits in the footer, outside the form it sends, so
-    the form names it (`sends`), which also makes Enter in a field press it.
+{#- The add sheet's body, which the sheet reads each time it opens, so every opening starts from one blank row at the
+    destinations' top whatever the last attempt left. The add button sits in the sheet's footer, outside the form it
+    sends, so the form names it (`sends`), which also makes Enter in a field press it.
 
     The folder name and its parent belong to `#mkdir-form`, not to `#add-form` they sit inside (`form=` on each): a
     control left in the add form would be checked against the magnet rows and sent with them. #}
-{% filter kit::wrap(
-    kit::Sheet::new("add", "add a download")
-        .close("cancel")
-        .action(kit::Button::primary("add").post("/add").sends("add-form"))
-        .datastar("effect", "$_added && el.close()")
-        .datastar("on:close", "$_added = false, el.querySelector('form').reset(), @get('/add')")
-) %}
 {% let form = kit::Form::post("/add").id("add-form") %}
 <form {{ form.attrs() }} class="flex flex-col gap-4">
   {{ magnets }}
-  {{ kit::Button::quiet("another magnet").icon(kit::icon::PLUS).datastar("on:click", "ms.addMagnetRow(document.getElementById('magnets'))").class("self-start") }}
   {#- The destination is real but secondary, so it starts folded behind the magnet field rather than putting a
       directory tree in front of someone who has not pasted anything yet. #}
   {% filter kit::wrap(kit::Disclosure::new("destination")) %}
@@ -26,4 +16,3 @@
 {% let mkdir = kit::Form::post("/mkdir").id("mkdir-form") %}
 <form {{ mkdir.attrs() }} hidden></form>
 {{ error }}
-{% endfilter %}

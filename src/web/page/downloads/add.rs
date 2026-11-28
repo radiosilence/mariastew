@@ -1,14 +1,16 @@
 //! The add sheet: one or more magnet rows and the destination they land in.
 //!
-//! Adding answers with as little as it can. A batch that went in whole closes
-//! the sheet (`_added`), and the stream draws the new rows behind it, which is
-//! the confirmation. A batch refused or partly taken answers with the sheet's
-//! two regions it changed: `#add-error` saying why, and `#magnets` holding only
-//! the magnets that did not go in, so pressing add again sends only those.
-//! Closing the sheet, however it is closed, asks for it fresh (`GET /add`).
+//! The sheet (`kit::Sheet::loads`, drawn by the page) reads its body from
+//! `GET /add` each time it opens, so every attempt starts fresh however the
+//! last one was abandoned. Adding answers with as little as it can. A batch
+//! that went in whole closes the sheet (`kit::Sheet::dismiss`), and the stream
+//! draws the new rows behind it, which is the confirmation. A batch refused or
+//! partly taken answers with the sheet's two regions it changed: `#add-error`
+//! saying why, and `#magnets` holding only the magnets that did not go in, so
+//! pressing add again sends only those.
 
 use askama::Template;
-use askama_datastar::{Html, PatchSignals};
+use askama_datastar::Html;
 use axum::extract::State;
 use axum::response::Response;
 use axum_extra::extract::Form;
@@ -20,17 +22,17 @@ use crate::auth::extract::CurrentSession;
 use crate::state::AppState;
 use crate::web::Draw;
 
-/// The sheet, `#add`, opened by the header's button.
+/// The sheet's body, which `#add` reads as it opens.
 #[derive(Template)]
 #[template(path = "downloads/add.html")]
-pub(in crate::web) struct Sheet {
+pub(in crate::web) struct Body {
     magnets: Html,
     error: Html,
     destination: Html,
 }
 
-impl Sheet {
-    pub(in crate::web) fn of(state: &AppState) -> Self {
+impl Body {
+    fn of(state: &AppState) -> Self {
         Self {
             magnets: Magnets::blank().draw(),
             error: Error::none().draw(),
@@ -39,9 +41,8 @@ impl Sheet {
     }
 }
 
-/// The magnet rows, `#magnets`: one row per magnet, every row the same, so
-/// the page's script adds one by cloning the first. Its handlers are
-/// delegated from here, so a cloned row needs nothing wired up.
+/// The magnet rows, `#magnets`, a `kit::RepeatField`: one row per magnet, or
+/// one blank row for none.
 #[derive(Template)]
 #[template(path = "downloads/add/magnets.html")]
 pub(in crate::web) struct Magnets {
@@ -51,7 +52,7 @@ pub(in crate::web) struct Magnets {
 impl Magnets {
     fn blank() -> Self {
         Self {
-            magnets: vec![String::new()],
+            magnets: Vec::new(),
         }
     }
 }
@@ -76,32 +77,13 @@ impl Error {
     }
 }
 
-/// The signals the sheet reads, which the server sets. A renamed field is a
-/// compile error here and a failing test against the template.
-#[derive(serde::Serialize)]
-struct Signals {
-    /// The batch went in whole: the sheet closes, and closing sets it back.
-    #[serde(rename = "_added")]
-    added: bool,
-}
-
-/// The sheet's signals as a page starts.
-pub(in crate::web) fn signals() -> serde_json::Map<String, serde_json::Value> {
-    match serde_json::to_value(Signals { added: false }) {
-        Ok(serde_json::Value::Object(map)) => map,
-        _ => serde_json::Map::new(),
-    }
-}
-
-/// The sheet's regions as a fresh sheet has them: one blank row, no error,
-/// the destinations at the top. Asked for whenever the sheet closes, since
-/// closing is the one event every way of abandoning an attempt raises.
+/// The sheet's body as a fresh sheet has it: one blank row, no error, the
+/// destinations at the top.
 pub(in crate::web) async fn fresh(State(state): State<AppState>) -> Response {
-    askama_datastar::events([
-        Magnets::blank().draw().patch().into(),
-        Error::none().draw().patch().into(),
-        Destination::roots(&state).draw().patch().into(),
-    ])
+    match kit::Markup::render(&Body::of(&state)) {
+        Ok(body) => askama_datastar::events([kit::Sheet::fill("add", body).into()]),
+        Err(e) => crate::web::failed(e),
+    }
 }
 
 /// One `magnet` per row, so the field repeats, which axum's own `Form` cannot
@@ -188,10 +170,7 @@ pub(in crate::web) async fn add(
     }
 
     if refused.is_empty() {
-        return match serde_json::to_string(&Signals { added: true }) {
-            Ok(json) => askama_datastar::events([PatchSignals::new(json).into()]),
-            Err(e) => crate::web::failed(e),
-        };
+        return askama_datastar::events([kit::Sheet::dismiss("add").into()]);
     }
     askama_datastar::events([
         Error::of(refused_message(rows.len(), &refused))
@@ -285,64 +264,9 @@ mod tests {
         )
         .await;
         let answer = answer(state(mock.url), &["magnet:?xt=urn:btih:abc"]).await;
-        assert!(answer.contains(r#""_added":true"#), "{answer}");
+        assert!(answer.contains("#add > section"), "{answer}");
+        assert!(answer.contains("el.closest('dialog').close()"), "{answer}");
         assert!(!answer.contains("add-error"), "{answer}");
-    }
-
-    /// The sheet closes on the signal the server sets, by the name the server
-    /// sets it under.
-    #[test]
-    fn the_sheet_reads_the_signal_the_server_sets() {
-        let sheet = Sheet {
-            magnets: Html::new(),
-            error: Html::new(),
-            destination: Html::new(),
-        }
-        .draw();
-        for name in signals().keys() {
-            assert!(
-                sheet.as_str().contains(&format!("${name}")),
-                "the sheet never reads {name}: {sheet:?}"
-            );
-        }
-    }
-
-    /// A template naming a helper `web/ms.ts` does not define throws at click
-    /// time and nowhere else, since no build step sees both halves.
-    #[test]
-    fn every_ms_helper_the_sheet_calls_is_defined() {
-        const SOURCE: &str = include_str!("../../../../web/ms.ts");
-        const BUNDLE: &str = include_str!("../../../../assets/app.js");
-        let sheet = Sheet {
-            magnets: Magnets::blank().draw(),
-            error: Html::new(),
-            destination: Html::new(),
-        }
-        .draw();
-        let html = sheet.as_str();
-        let called: std::collections::BTreeSet<&str> = html
-            .match_indices("ms.")
-            .filter(|(i, _)| {
-                html[..*i]
-                    .chars()
-                    .next_back()
-                    .is_none_or(|c| !c.is_alphanumeric() && c != '_' && c != '$' && c != '.')
-            })
-            .filter_map(|(i, _)| html[i + 3..].split_once('('))
-            .map(|(name, _)| name)
-            .collect();
-        assert!(!called.is_empty(), "no ms.* helper calls found: {html}");
-        for name in called {
-            let call = format!("{name}(");
-            assert!(
-                SOURCE.contains(&call),
-                "web/ms.ts does not define ms.{name}()"
-            );
-            assert!(
-                BUNDLE.contains(&call),
-                "the committed bundle lacks ms.{name}(); run `mise run js`"
-            );
-        }
     }
 
     #[test]

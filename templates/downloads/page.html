@@ -1,7 +1,12 @@
 {#- The header is the primary action: the person knows what they opened, and a name would spend the vertical space a
-    phone in portrait can least afford. #}
+    phone in portrait can least afford. The sheet reads its body from `/add` as it opens. #}
 <header class="border-b border-rule p-4">
   {{ kit::Button::primary("add a download").icon(kit::icon::PLUS).opens("add").class("w-full") }}
 </header>
-{{ add }}
+{{
+    kit::Sheet::new("add", "add a download")
+        .close("cancel")
+        .action(kit::Button::primary("add").post("/add").sends("add-form"))
+        .loads("/add")
+}}
 {{ list }}

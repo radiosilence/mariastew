@@ -118,7 +118,7 @@ mise run dev:mock   # against the mock aria2 — every download state at once
 mise run seed       # populate the local tv/movies roots with realistic names
 ```
 
-The stylesheet, browser script and icons are generated and committed, so
+The stylesheet and icons are generated and committed, so
 `cargo build` needs no node toolchain. Rebuilding them after changing a
 template is [docs/frontend.md](docs/frontend.md).
 

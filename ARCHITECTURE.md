@@ -89,13 +89,13 @@ Sign-in, `/healthz` and the assets are outside both.
 ### The page
 
 `page::serve` draws the page two ways. A browser asking for the address gets
-the document around the body. The page itself asking in place gets the body
-morphed into `main` and the address as `$url` (`askama_datastar::address`);
-the document's `askama_datastar::history("url")` keeps the address bar on it.
+the document around the body. The page itself asking in place, as the kit's
+`Navigation` does on Back and Forward, gets the body morphed into `main` and
+the address as `$url` (`askama_datastar::address`); `Navigation`, placed once
+in the document, owns the history and keeps the address bar on `$url`.
 
 The page starts with the signals every page declares: `url`, which the
-stream's `reopen_on` names, and `seen`, what its stream carries on from. The
-add sheet adds `_added`, which only the page reads.
+stream's `reopen_on` names, and `seen`, what its stream carries on from.
 
 ### The stream
 
@@ -120,24 +120,28 @@ or the network fails), and the next carries on from there. A row is compared
 against what went down this connection, not against the previous snapshot, so
 a row that changed in a pass a slow client skipped still arrives. The list is
 sent whole only when a download arrives, leaves or moves, since a morph by id
-can neither add an element nor remove one. The kit names each request
-button's busy signal afresh on every render, so fingerprints leave those names
-out.
+can neither add an element nor remove one. The kit names each control's busy
+signal by what the control is, so a row drawn twice from one state is the same
+markup and its fingerprint holds; a row redrawn while its own request runs
+keeps its spinner turning.
 
 ### Actions
 
 An action changes something and answers with as little as it can:
 
 - **Pause, resume, clear**: the stream draws the change, so the answer is
-  empty, or a flash when aria2 refused. Clear waits for aria2 to let go
+  empty, or a flash when aria2 refused. An answer that is an error status, whose
+  body Datastar drops, is said by the flash region itself
+  (`kit::Flash::region().failed`), and a 401 sends the page to sign-in. Clear waits for aria2 to let go
   (`library::remove`), so the button's own wait is the wait, and closes the
   page's question with `kit::Confirm::close` when cancelling an unfinished
   download asked one.
-- **Add**: a batch that went in whole sets `_added`, which closes the sheet;
-  the stream draws the new rows behind it. A refusal answers with the regions
-  it changed: `#add-error` saying why, and `#magnets` holding only the magnets
-  that did not go in. Closing the sheet, however it is closed, asks for it
-  fresh (`GET /add`).
+- **Add**: the sheet is a `kit::Sheet::loads("/add")`, which reads its body
+  afresh each time it opens, so an abandoned attempt leaves nothing behind. A
+  batch that went in whole answers `kit::Sheet::dismiss`, which closes it; the
+  stream draws the new rows behind it. A refusal answers with the regions it
+  changed: `#add-error` saying why, and `#magnets` holding only the magnets
+  that did not go in.
 - **Browse, make a folder**: nothing streams the picker, so each answers with
   `#destination` as it now stands, or `#add-error` on a refusal. A flash would
   sit under the open sheet.
@@ -155,14 +159,15 @@ nothing calls `Html::trusted`, and no template uses `|safe`. A wrapper is a kit
 component with a slot (`{% filter kit::wrap(…) %}`).
 
 Datastar expressions are constants. A value that differs per row goes in a
-`data-*` attribute, escaped, and the expression reads `el.dataset`: a log
-line's time is `data-at`, and every button's URL is the kit's `data-url`.
+`data-*` attribute, escaped, and the expression reads `el.dataset`, as every
+button's URL is the kit's `data-url`. The app writes no expressions of its own:
+the magnet rows are the kit's `RepeatField`, a log line's time is its `Time`,
+and every sheet keeps above an on-screen keyboard by itself. There is no
+browser script beyond Datastar.
 Signals are named by the program, never built from data. Datastar sends every
 signal except those whose names start with `_`, so a signal the server reads
-(`url`, `seen`) has no underscore, and one only the page reads (`_added`, the
-kit's busy signals) has one. The little the page does without the server (the
-magnet rows' paste, clone and remove, and the keyboard inset) is `web/ms.ts`,
-called from constant expressions.
+(`url`, `seen`) has no underscore, and one only the page reads (the kit's
+busy signals) has one.
 
 ### Patch targets
 
@@ -172,7 +177,7 @@ where the server sends a region again, declared once in its template:
 | Where | Ids |
 |---|---|
 | Layout | `main` |
-| Downloads | `downloads`, each download's `dl-<gid>`, and its `files-<gid>` and `log-<gid>`, which keep their panels open across a morph |
+| Downloads | `downloads`, each download's `dl-<gid>`, and its `files-<gid>` and `log-<gid>`, whose ids are what make the kit's `Disclosure` keep a panel open across a morph |
 | The add sheet | `magnets`, `add-error`, `destination` |
 
 Two more ids are named by something outside them rather than patched: the
@@ -189,7 +194,8 @@ only. Buttons that send requests are busy for exactly as long as their own
 request runs; a download's buttons share a `busy_key` of its gid, so pressing
 one disables the other and its status turns while either runs, and the
 picker's controls share one key, so a second press while a folder is read does
-nothing. The stylesheet is compiled from the crate's own source (`just kit`
+nothing, and the listing being left sits under the kit's `Cover` for that
+key. The stylesheet is compiled from the crate's own source (`just kit`
 links it), so one version in `Cargo.lock` names both the markup and the rules
 that draw it. What the kit cannot yet express is tracked on
 radiosilence/koan#2365.

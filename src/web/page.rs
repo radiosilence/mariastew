@@ -2,11 +2,11 @@
 //! downloads ([`downloads`]).
 //!
 //! [`serve`] draws it two ways. A browser asking for the address gets the
-//! document around the body. The page itself asking, through a link or form
-//! that loads in place, gets the body morphed into `main` and the address as
-//! `$url` (`askama_datastar::address`), which the document's
-//! `askama_datastar::history("url")` keeps the address bar on. So a reload, a
-//! shared link, back and forward all draw what the address names.
+//! document around the body. The page itself asking, as the kit's
+//! `Navigation` does on Back and Forward, gets the body morphed into `main` and
+//! the address as `$url` (`askama_datastar::address`), which `Navigation`
+//! keeps the address bar on. So a reload, a shared link, back and forward all
+//! draw what the address names.
 
 use axum::extract::{OriginalUri, State};
 use axum::http::HeaderMap;
@@ -42,13 +42,8 @@ pub(super) async fn serve(
             askama_datastar::PatchSignals::new(signals(&url, &seen).to_string()).into(),
         ]);
     }
-    let mut signals = signals(&url, &seen);
-    if let Some(all) = signals.as_object_mut() {
-        // The add sheet's own, which the server sets and the sheet reads.
-        all.extend(downloads::add::signals());
-    }
     match askama_datastar::Html::render(&Layout {
-        signals: signals.to_string(),
+        signals: signals(&url, &seen).to_string(),
         main,
     }) {
         Ok(html) => html.into_response(),

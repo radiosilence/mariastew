@@ -1,14 +1,23 @@
-{#- One row per magnet, each the same, so the page's script adds one by cloning the first. No row carries an
-    expression of its own: paste and remove are delegated from here. A magnet is a URI, so its field gets the URI
-    keyboard and none of the text helpers, which could only corrupt it. #}
-<div id="magnets" class="flex flex-col gap-2" data-on:click="ms.magnetRowClick(evt)" data-on:paste="ms.pasteMany(evt)">
-  {%- for magnet in magnets %}
-  <div class="group/magnet controls" data-magnet-row>
-    {{ kit::Input::text("magnet").label("magnet link").placeholder("paste a magnet link").value(magnet).autocomplete("off").attr("inputmode", "url").attr("autocapitalize", "none").attr("autocorrect", "off").attr("spellcheck", "false").attr("enterkeyhint", "go").class("min-w-0 flex-1") }}
-    {#- Where the clipboard is read, and the only place: Safari anchors its Paste bubble to the touch that asked, so
-        asking here puts it against the field it fills. #}
-    {{ kit::Button::bordered("paste from the clipboard").icon_only(kit::icon::PASTE).data("action", "paste") }}
-    {{ kit::Button::quiet("remove this magnet").icon_only(kit::icon::CLOSE).data("action", "remove").class("group-only/magnet:hidden") }}
-  </div>
-  {%- endfor %}
-</div>
+{#- One row per magnet. A magnet is a URI, so its field gets the URI keyboard and none of the text helpers, which could
+    only corrupt it. The field is plain text rather than `type="url"`, so the browser does not refuse a row before
+    `/add` can say which row is wrong. Each row's paste button is the only place the clipboard is read: Safari anchors
+    its Paste bubble to the touch that asked, so asking there puts it against the field it fills. A paste holding
+    several lines fills a row each; it is not split on spaces, since a `dn=` copied from a page may hold one. #}
+{{
+    kit::RepeatField::new(
+        "magnet links",
+        kit::Input::text("magnet")
+            .placeholder("paste a magnet link")
+            .autocomplete("off")
+            .attr("inputmode", "url")
+            .attr("autocapitalize", "none")
+            .attr("autocorrect", "off")
+            .attr("spellcheck", "false")
+            .attr("enterkeyhint", "go"),
+        "another magnet",
+        "remove this magnet",
+    )
+    .values(magnets)
+    .paste("paste from the clipboard")
+    .id("magnets")
+}}
