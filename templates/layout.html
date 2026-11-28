@@ -14,7 +14,8 @@
     <link rel="apple-touch-icon" href="{{ self.asset("/assets/apple-touch-icon.png") }}">
     <link rel="manifest" href="{{ self.asset("/assets/manifest.webmanifest") }}">
   </head>
-  <body data-signals="{{ signals }}">
+  {#- The server's clock and the transfers' mover, once per page; a streamed region never carries them. #}
+  <body data-signals="{{ signals }}"{{ kit::server_clock() }}>
     {{ kit::SkipLink::new("skip to the downloads", "downloads") }}
     <div hidden{{ self.stream() }}></div>
     {#- Owns the history: Back and Forward load the entry in place, with the address following `$url`. #}

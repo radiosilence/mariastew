@@ -41,10 +41,10 @@ A reading moves for two of the gaps between readings, the poll's sleep plus the
 round trip that brought it, so a row runs on until the next is due and freezes
 if it does not come. The rate is nought, and the row stands still, whenever the
 bytes are not being downloaded: during a hash check, whose bytes are hashed
-rather than fetched; on a finished or paused row; and before a magnet has a
-size to count towards, when aria2's own rate is still shown among the expanded
-readings as `down`, the difference between a magnet that is resolving and one
-that is stuck. aria2's rate is the whole torrent's, and a selective torrent
+rather than fetched; and on a finished or paused row. A magnet with no size yet
+has no bytes to count towards, so its transfer is a waiting meter with aria2's
+rate beside it while there is one, the difference between a magnet that is
+resolving and one that is stuck. aria2's rate is the whole torrent's, and a selective torrent
 also fetches the pieces its skipped files share with the chosen ones, so the
 rate the bar moves at is scaled to the chosen share of the torrent.
 
