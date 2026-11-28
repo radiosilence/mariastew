@@ -22,12 +22,22 @@ claim stops being true — see the first-tick note under **Polling**.
 
 ## What a row says it is doing
 
-A collapsed row answers "how is it going" — name, state, bar, destination, and
-beside the destination the current rate and the time left. Those last two are
-there because a bar raises "will this be done tonight" and cannot settle it;
-behind a tap they were one tap too many. Both are absent rather than zeroed
-when nothing is moving, which is also why there is no countdown on a seeding
-row.
+A collapsed row answers "how is it going" — name, state, the transfer and the
+destination. The transfer is koan-kit-web's `Transfer`: the bar, the bytes done
+of the total, and the current rate and time left, which are there because a bar
+raises "will this be done tonight" and cannot settle it; behind a tap they were
+one tap too many. The rate and the time left are absent rather than zeroed when
+nothing is moving, which is also why there is no countdown on a seeding row.
+
+Each reading carries aria2's rate and the instant the poller took it, and the
+page moves the bytes and the countdown from that rate between readings, so a
+row advances smoothly however the stream's patches arrive. The rate is sent as
+nought, and the row stands still, whenever the bytes are not being downloaded:
+during a hash check, whose bytes are hashed rather than fetched; on a finished
+or paused row; and before a magnet has a size to count towards. A reading also
+stops moving two poll intervals after it arrived (never less than two seconds),
+so a stream that stalls without saying so freezes the row rather than running
+it on to a total it has not reached.
 
 Expanding it answers "what is aria2 actually doing", which needs rather more
 than a percentage:

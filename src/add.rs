@@ -219,7 +219,7 @@ pub async fn finish(state: &AppState, sub: &str, dir: &str, metadata_gid: &str) 
             "keeping {} of {} files, skipping {skipped} ({})",
             indices.len(),
             files.len(),
-            crate::format::bytes(skipped_bytes)
+            koan_kit_web::size(skipped_bytes)
         ),
     );
 

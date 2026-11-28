@@ -13,7 +13,6 @@ mod auth;
 mod config;
 mod error;
 mod filter;
-mod format;
 mod library;
 mod notify;
 mod poll;

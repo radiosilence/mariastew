@@ -250,6 +250,10 @@ pub struct Download {
     pub upload_length: u64,
     pub download_speed: u64,
     pub upload_speed: u64,
+    /// When this reading was taken, in milliseconds since the Unix epoch. It
+    /// tells one reading from the next, so a page moving the bytes between
+    /// readings knows when a new one has arrived.
+    pub measured_at_ms: i64,
     pub connections: u32,
     pub num_seeders: u32,
     pub error_message: Option<String>,
@@ -385,24 +389,6 @@ impl Download {
         self.name().trim_start_matches(METADATA_PREFIX)
     }
 
-    /// `None` when nothing is moving — an ETA with zero speed is infinity, and
-    /// one taken off a collapsing rate is misleading. Also `None` when the
-    /// size is not known yet: a resolving magnet moves bytes at a real rate
-    /// with no total to subtract them from, and dividing zero remaining by it
-    /// put "0s left" beside a torrent that had not started.
-    pub fn eta_secs(&self) -> Option<u64> {
-        if self.download_speed == 0 || self.is_finished() {
-            return None;
-        }
-        let (total, done) = self.display_totals();
-        if total == 0 {
-            return None;
-        }
-        total
-            .checked_sub(done)
-            .map(|left| left / self.download_speed)
-    }
-
     /// Share ratio. With no ratio limit (`--seed-ratio=0.0`), this is just
     /// the only way to tell if a torrent is actually seeding.
     pub fn ratio(&self) -> Option<f64> {
@@ -493,6 +479,7 @@ impl Download {
             upload_length: 0,
             download_speed: 0,
             upload_speed: 0,
+            measured_at_ms: 0,
             connections: 0,
             num_seeders: 0,
             error_message: None,
@@ -598,6 +585,9 @@ impl RawDownload {
             upload_length: self.upload_length.parse().unwrap_or(0),
             download_speed: self.download_speed.parse().unwrap_or(0),
             upload_speed: self.upload_speed.parse().unwrap_or(0),
+            measured_at_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |since| since.as_millis() as i64),
             connections: self.connections.parse().unwrap_or(0),
             num_seeders: self.num_seeders.and_then(|s| s.parse().ok()).unwrap_or(0),
             error_message: self.error_message,
@@ -1105,22 +1095,6 @@ mod tests {
     }
 
     #[test]
-    fn eta_is_none_without_a_rate_to_divide_by() {
-        let mut d = download(Status::Active);
-        d.total_length = 100;
-        assert_eq!(d.eta_secs(), None);
-    }
-
-    #[test]
-    fn eta_is_the_remaining_selected_bytes_over_the_current_rate() {
-        let mut d = download(Status::Active);
-        d.total_length = 1000;
-        d.completed_length = 400;
-        d.download_speed = 60;
-        assert_eq!(d.eta_secs(), Some(10));
-    }
-
-    #[test]
     fn ratio_is_uploaded_over_downloaded_and_absent_before_anything_downloaded() {
         let mut d = download(Status::Active);
         assert_eq!(d.ratio(), None);
@@ -1303,7 +1277,6 @@ mod tests {
     fn a_metadata_passes_own_bytes_are_not_the_torrents_progress() {
         let d = resolved_metadata_pass();
         assert_eq!(d.percent(), None);
-        assert_eq!(d.eta_secs(), None);
         assert_eq!(d.ratio(), None);
     }
 
@@ -1315,16 +1288,6 @@ mod tests {
         let mut d = download(Status::Active);
         d.bittorrent_name = Some("Some.Show.S01".to_string());
         assert_eq!(d.display_name(), "Some.Show.S01");
-    }
-
-    /// An unresolved magnet has a real download speed and no size to spend it
-    /// against, so dividing one by the other would show "0s left" beside a
-    /// torrent that has not started.
-    #[test]
-    fn no_eta_before_the_size_is_known() {
-        let mut d = download(Status::Active);
-        d.download_speed = 1_000;
-        assert_eq!(d.eta_secs(), None);
     }
 
     #[test]

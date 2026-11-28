@@ -914,9 +914,9 @@ dependencies = [
 
 [[package]]
 name = "koan-kit-web"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "060a59b6270128ac1dbf09e3d3bc7288b8ae8ff663f3c90d3d98e84dccea13bc"
+checksum = "798ce6331b23416a3340940acdc3e0a02998381eb50b8aabfb035b17fc4c425e"
 dependencies = [
  "askama",
  "askama_datastar",
@@ -1091,9 +1091,9 @@ dependencies = [
 
 [[package]]
 name = "qrcode"
-version = "0.14.1"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
+checksum = "ace1a365f55004297f2cf24acfd96d02966246ca423385273b58a7dc873ee14d"
 
 [[package]]
 name = "quinn"
