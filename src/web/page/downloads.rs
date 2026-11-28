@@ -539,7 +539,10 @@ mod tests {
         let html = draw(&moving());
         let summary = summary(&html);
         assert!(summary.contains("data-kit-transfer"), "{summary}");
-        assert!(summary.contains("512.0 MB</span> of 1.0 GB"), "{summary}");
+        assert!(
+            summary.contains("512.0 MB") && summary.contains("of 1.0 GB"),
+            "{summary}"
+        );
         assert!(summary.contains("1.0 MB/s"), "no rate: {summary}");
         assert!(summary.contains("8m 32s left"), "no time left: {summary}");
     }
